@@ -20,8 +20,7 @@
   },
   "scripts": {
     "dev": "nuxi dev playground",
-    "build": "nuxi module build",
-    "prepare": "nuxi module build",
+    "build": "echo 'Build is handled by the consuming Nuxt app or a future package bundler setup.'",
     "test": "vitest run",
     "test:watch": "vitest"
   },

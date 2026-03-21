@@ -3,9 +3,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "nuxi dev",
+    "dev": "nuxi dev --host 127.0.0.1 --port 3001",
     "build": "nuxi build",
-    "preview": "nuxi preview"
+    "preview": "nuxi preview --host 127.0.0.1 --port 3001"
   },
   "dependencies": {
     "@huggingface/transformers": "^3.8.1",
