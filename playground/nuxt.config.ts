@@ -1,8 +1,6 @@
-/// <reference path="../dist/runtime/nuxt.d.ts" />
 export default defineNuxtConfig({
   modules: ["nuxt-local-model"],
   localModel: {
-    // One cache folder covers both downloads and local reuse.
     cacheDir: "./.ai-models",
     serverWorker: true,
     browserWorker: false,
@@ -12,6 +10,10 @@ export default defineNuxtConfig({
         model: "Xenova/all-MiniLM-L6-v2",
         options: {
           dtype: "q8",
+        },
+        callOptions: {
+          pooling: "mean",
+          normalize: true,
         },
       },
     },
