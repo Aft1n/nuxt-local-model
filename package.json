@@ -1,34 +1,49 @@
 {
   "name": "nuxt-local-model",
-  "version": "0.1.0",
+  "version": "0.1.5",
   "description": "A Nuxt module for local in-app Hugging Face transformer models.",
   "license": "MIT",
   "repository": "https://github.com/Aft1n/nuxt-local-model",
   "files": [
     "dist",
-    "README.md"
+    "README.md",
+    "assets"
   ],
   "type": "module",
   "main": "./dist/module.mjs",
   "module": "./dist/module.mjs",
-  "types": "./dist/module.d.ts",
+  "types": "./dist/module.d.mts",
   "exports": {
     ".": {
-      "types": "./dist/module.d.ts",
+      "types": "./dist/module.d.mts",
       "import": "./dist/module.mjs"
+    },
+    "./client": {
+      "types": "./dist/runtime/composables/useLocalModel.d.ts",
+      "import": "./dist/runtime/composables/useLocalModel.js"
+    },
+    "./server": {
+      "types": "./dist/runtime/server/index.d.ts",
+      "import": "./dist/runtime/server/index.js"
     }
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "scripts": {
     "dev": "nuxi dev playground",
-    "build": "echo 'Build is handled by the consuming Nuxt app or a future package bundler setup.'",
+    "build": "nuxt build-module",
+    "prepare": "nuxt build-module --prepare",
     "test": "vitest run",
     "test:watch": "vitest"
   },
   "dependencies": {
-    "@huggingface/transformers": "^3.8.1"
+    "@huggingface/transformers": "^3.8.1",
+    "onnxruntime-node": "^1.21.0"
   },
   "devDependencies": {
     "@nuxt/kit": "^4.3.0",
+    "@nuxt/module-builder": "^1.0.2",
     "@nuxt/test-utils": "^4.0.0",
     "@types/node": "^24.0.0",
     "nuxt": "^4.3.0",
@@ -37,5 +52,10 @@
   },
   "peerDependencies": {
     "nuxt": "^4.3.0"
-  }
+  },
+  "trustedDependencies": [
+    "@parcel/watcher",
+    "onnxruntime-node",
+    "protobufjs"
+  ]
 }

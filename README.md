@@ -1,15 +1,30 @@
 # Nuxt Local Model
 
+[![npm version][npm-version-src]][npm-version-href]
+[![npm downloads][npm-downloads-src]][npm-downloads-href]
+[![License][license-src]][license-href]
+
+## Scalable local inference for Nuxt
+
+<img src="https://raw.githubusercontent.com/Aft1n/nuxt-local-model/main/assets/module-banner.svg" alt="Nuxt Local Model banner" />
+
+Note: This package is under active development. Please open issues if you run into anything unclear.
+
+- [✨ &nbsp;Release Notes](/CHANGELOG.md)
+- [📖 &nbsp;Documentation](https://github.com/Aft1n/nuxt-local-model)
+
 A Nuxt module for easily integrating local Hugging Face transformer models into your Nuxt 4 application.
 
 ## Features
 
 - Easily use local models in your Nuxt app
 - Supports any Hugging Face task and model you want to configure
-- Auto-imported composable, `useLocalModel()` by default
+- Auto-imported composable, `useLocalModel()` by default for frontend Vue code
+- Server-safe helper, `getLocalModel()` for `server/api` and utilities
 - Fully configurable via `nuxt.config.ts`
 - Supports changing model names, tasks, and settings per usage
 - Optional worker-backed execution on the server or in the browser
+- Server runtime support for Node, Bun, and Deno
 - Works across macOS, Linux, Windows, and Docker
 - Supports persistent model cache directories so models are not re-downloaded on every deploy
 
@@ -27,16 +42,16 @@ If you prefer to install manually, run:
 
 ```bash
 # Using npm
-npm install nuxt-local-model @huggingface/transformers
+npm install nuxt-local-model
 
 # Using yarn
-yarn add nuxt-local-model @huggingface/transformers
+yarn add nuxt-local-model
 
 # Using pnpm
-pnpm add nuxt-local-model @huggingface/transformers
+pnpm add nuxt-local-model
 
 # Using bun
-bun add nuxt-local-model @huggingface/transformers
+bun add nuxt-local-model
 ```
 
 Then, add it to your Nuxt config:
@@ -49,7 +64,9 @@ export default defineNuxtConfig({
 
 ## Usage
 
-Once installed, you can use `useLocalModel()` anywhere in your Nuxt app.
+Once installed, you can use `useLocalModel()` in your Vue app code.
+
+For server routes and utilities, use `getLocalModel()`.
 
 ### Basic Example
 
@@ -60,17 +77,32 @@ const output = await embedder("Nuxt local model example")
 </script>
 ```
 
+### Server Example
+
+```ts
+// server/api/demo/search.get.ts
+import { getLocalModel } from "nuxt-local-model/server"
+
+export default defineEventHandler(async () => {
+  const embedder = await getLocalModel("embedding")
+  return await embedder("hello world")
+})
+```
+
 ### Defining Models in `nuxt.config.ts`
 
 ```ts
+import { defineLocalModelConfig } from "nuxt-local-model"
+
 export default defineNuxtConfig({
   modules: ["nuxt-local-model"],
-  localModel: {
-    cacheDir: "./.ai-models", // where downloaded model files are cached on disk
+  localModel: defineLocalModelConfig({
+    runtime: "auto", // auto-detect Node, Bun, or Deno on the server
+    cacheDir: "./.ai-models", // one cache folder for downloads and reuse
     allowRemoteModels: true, // allow fetching missing models from Hugging Face
     allowLocalModels: true, // allow reusing cached / mounted model files
     defaultTask: "feature-extraction", // default pipeline type when a model entry does not override it
-    serverWorker: false, // run inference in a Node worker thread on the server
+    serverWorker: false, // run inference in a server worker thread on Node, Bun, or Deno
     browserWorker: false, // run inference in a browser Web Worker; avoid this for very large models
     models: {
       embedding: {
@@ -81,9 +113,14 @@ export default defineNuxtConfig({
         },
       },
     },
-  },
+  }),
 })
 ```
+
+Tip: `defineLocalModelConfig()` keeps your alias keys as literal types, so you can reuse them
+with `LocalModelAliases<typeof localModel>` if you want exact autocomplete elsewhere in your app.
+If you are writing server routes, import `getLocalModel()` from `nuxt-local-model/server`.
+In Vue app code, `useLocalModel()` is auto-imported once the module is installed.
 
 ### Overriding Settings at the Call Site
 
@@ -103,14 +140,17 @@ const model = await useLocalModel("embedding", {
 You can configure the module in your `nuxt.config.ts`:
 
 ```ts
+import { defineLocalModelConfig } from "nuxt-local-model"
+
 export default defineNuxtConfig({
   modules: ["nuxt-local-model"],
-  localModel: {
-    cacheDir: "./.ai-models", // persistent cache path for downloaded model assets
+  localModel: defineLocalModelConfig({
+    runtime: "auto", // or "node", "bun", or "deno"
+    cacheDir: "./.ai-models", // persistent cache folder for downloaded model assets
     allowRemoteModels: true, // download from Hugging Face if not yet cached
     allowLocalModels: true, // reuse local cache or mounted volume contents
     defaultTask: "feature-extraction", // default for aliases that do not override task
-    serverWorker: true, // use a Node worker thread so inference does not block the main server thread
+    serverWorker: true, // use a server worker thread so inference does not block the main server thread
     browserWorker: false, // enable only if you intentionally want browser-side inference
     models: {
       embedding: {
@@ -121,13 +161,15 @@ export default defineNuxtConfig({
         },
       },
     },
-  },
+  }),
 })
 ```
 
+If `onnxruntime-node` is not available in your server runtime, the module now falls back to the default Transformers.js backend instead of crashing during startup.
+
 ### Cache Directory
 
-The cache directory controls where downloaded model files are stored.
+The cache directory controls where downloaded model files are stored and reused.
 
 Recommended defaults:
 
@@ -155,8 +197,8 @@ What this does:
 
 - `NUXT_LOCAL_MODEL_CACHE_DIR=/data/local-models` tells the app which folder to use for model caching
 - `-v local-models:/data/local-models` mounts a persistent Docker volume at that same folder
-- the first container start downloads missing models into the mounted volume
-- later starts reuse the models already stored there
+  - the first container start downloads missing models into the mounted cache folder
+  - later starts reuse the models already stored there
 
 You can rename the host-facing volume however you want. What matters is that the path inside
 the container matches the cache path used by the module.
@@ -216,11 +258,12 @@ In other words:
 - your Docker cache can be `/models-cache`
 - both are fine as long as the app config matches the environment it runs in
 
-### Changing the Composable Name
+### Naming Rule
 
-This module currently exposes `useLocalModel()` by default.
+- `useLocalModel()` is for frontend Vue components, pages, and composables
+- `getLocalModel()` is for `server/api` routes and Nitro utilities
 
-If you want to add your own wrapper or alias in the app, you can do that on top of the composable without changing the module internals.
+Both use the same underlying model-loading logic, so the runtime behavior stays consistent.
 
 ### Worker Mode
 
@@ -256,6 +299,8 @@ For model/task behavior and runtime options, see the official Transformers.js do
 
 This package includes a minimal playground app with an embedding example inside `playground/`.
 
+The playground keeps the note list in the page and uses server routes for embeddings and search, so it demonstrates the server-backed flow end to end without a database.
+
 Run it with:
 
 ```bash
@@ -266,7 +311,7 @@ npm run dev
 
 If you want to publish this module to GitHub and npm:
 
-1. `cd nuxt-llm-module`
+1. `cd nuxt-local-model`
 2. `git init`
 3. commit the files
 4. create a GitHub repository
@@ -278,3 +323,10 @@ If you want to publish this module to GitHub and npm:
 
 - This module is intentionally generic and does not ship opinionated preset models.
 - The example playground shows how to wire an embedding model, but you can register any task/model combination supported by `@huggingface/transformers`.
+
+[npm-version-src]: https://img.shields.io/npm/v/nuxt-local-model?style=flat-square
+[npm-version-href]: https://www.npmjs.com/package/nuxt-local-model
+[npm-downloads-src]: https://img.shields.io/npm/dm/nuxt-local-model?style=flat-square
+[npm-downloads-href]: https://www.npmjs.com/package/nuxt-local-model
+[license-src]: https://img.shields.io/npm/l/nuxt-local-model?style=flat-square
+[license-href]: https://opensource.org/licenses/MIT

@@ -1,15 +1,13 @@
-import { env } from "@huggingface/transformers"
-import { defineNuxtPlugin, useRuntimeConfig } from "#app"
-import { resolveCacheDir } from "../utils"
+import { defineNuxtPlugin, useRuntimeConfig } from "nuxt/app"
+import { applyLocalModelEnvironment, resolveRuntimeConfig } from "../utils"
 
 export default defineNuxtPlugin(() => {
   const runtimeConfig = useRuntimeConfig()
-  const localModel = (runtimeConfig.public as { localModel?: { cacheDir?: string; localModelPath?: string } }).localModel
+  const localModel = resolveRuntimeConfig((runtimeConfig.public as { localModel?: Record<string, unknown> }).localModel as any)
 
-  env.cacheDir = resolveCacheDir(localModel?.cacheDir)
-  env.localModelPath = localModel?.localModelPath || "/models/"
-  env.allowRemoteModels = true
-  env.allowLocalModels = false
-
-  console.info(`[nuxt-local-model] browser cache ready at ${env.cacheDir}`)
+  applyLocalModelEnvironment({
+    cacheDir: localModel.cacheDir,
+    allowRemoteModels: localModel.allowRemoteModels,
+    allowLocalModels: false,
+  })
 })

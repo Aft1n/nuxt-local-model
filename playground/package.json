@@ -3,13 +3,19 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "nuxi dev --host 127.0.0.1 --port 3001",
+    "dev": "nuxi dev",
     "build": "nuxi build",
-    "preview": "nuxi preview --host 127.0.0.1 --port 3001"
+    "preview": "nuxi preview"
   },
   "dependencies": {
     "@huggingface/transformers": "^3.8.1",
+    "onnxruntime-node": "^1.21.0",
     "nuxt": "^4.3.0",
     "vue": "^3.5.30"
-  }
+  },
+  "trustedDependencies": [
+    "@parcel/watcher",
+    "onnxruntime-node",
+    "protobufjs"
+  ]
 }

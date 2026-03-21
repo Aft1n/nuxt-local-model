@@ -1,25 +1,18 @@
 <template>
-  <main class="shell">
-    <section class="hero">
+  <main class="page">
+    <header class="hero">
       <p class="eyebrow">nuxt-local-model playground</p>
-      <h1>Local embeddings, semantic search, and zero database setup.</h1>
+      <h1>Server-run embeddings with an in-memory semantic search demo.</h1>
       <p class="lede">
-        Add notes, build vectors in memory, and search them with a local Hugging Face embedding model.
-        Everything runs inside this playground app.
+        Add notes, let the Nuxt server embed them, and search them again without a database.
       </p>
-    </section>
+    </header>
 
     <section class="panel">
       <div class="field">
         <label for="note">New note</label>
-        <textarea
-          id="note"
-          v-model="note"
-          rows="4"
-          placeholder="Write something meaningful to embed..."
-        />
+        <textarea id="note" v-model="note" rows="4" placeholder="Write note content..." />
       </div>
-
       <div class="actions">
         <button class="primary" :disabled="busy" @click="addNote">
           {{ busy ? "Working..." : "Run embedding" }}
@@ -36,18 +29,19 @@
             id="query"
             v-model="query"
             type="text"
-            placeholder="Search notes by meaning..."
+            placeholder="
+            Search for local embedding models
+          "
             @input="searchNotes"
           />
         </div>
 
         <div class="results">
-          <div v-for="item in searchResults" :key="item.id" class="result">
-            <div class="result-head">
-              <strong>{{ item.text }}</strong>
+          <div v-for="item in searchResults" :key="item.id" class="card">
+            <div class="card-row">
               <span>{{ formatScore(item.score) }}</span>
             </div>
-            <p>{{ item.preview }}</p>
+            <p>{{ item.content }}</p>
           </div>
         </div>
       </article>
@@ -55,12 +49,11 @@
       <article class="panel">
         <h2>Stored notes</h2>
         <div class="list">
-          <div v-for="item in notes" :key="item.id" class="note">
-            <div class="note-head">
-              <strong>{{ item.text }}</strong>
-              <span>{{ item.embedding ? `${item.embedding.length} dims` : "pending" }}</span>
+          <div v-for="item in notes" :key="item.id" class="card">
+            <div class="card-row">
+              <span>{{ item.embedding.length > 0 ? `${item.embedding.length} dims` : "pending" }}</span>
             </div>
-            <p>{{ item.preview }}</p>
+            <p>{{ item.content }}</p>
           </div>
         </div>
       </article>
@@ -71,105 +64,71 @@
 <script setup lang="ts">
 type NoteItem = {
   id: string
-  text: string
-  preview: string
+  content: string
   embedding: number[] | null
 }
 
 type SearchItem = {
   id: string
-  text: string
-  preview: string
+  content: string
   score: number
 }
 
 const note = ref("Transformers.js makes local embedding workflows easy in Nuxt.")
-const query = ref("local embedding search")
-const status = ref("Ready")
+const query = ref("")
 const busy = ref(false)
-const notes = ref<NoteItem[]>([
-  { id: "1", text: "Nuxt local models", preview: "Run inference close to your app without a remote API.", embedding: null },
-  { id: "2", text: "Docker cache volume", preview: "Persist model downloads across deploys.", embedding: null },
-  { id: "3", text: "Worker threads", preview: "Keep heavy inference off the main server thread.", embedding: null },
-])
-const searchResults = ref<SearchItem[]>([])
+const status = ref("Ready")
+const notes = ref<NoteItem[]>([])
 
-let embedderPromise: Promise<ReturnType<typeof useLocalModel>> | null = null
+const { data: notesData, refresh: refreshNotes } = await useFetch<NoteItem[]>("/api/demo/notes", {
+  default: () => [],
+})
 
-function getEmbedder() {
-  if (!embedderPromise) {
-    embedderPromise = useLocalModel("embedding")
-  }
-  return embedderPromise
-}
+const { data: searchData, refresh: refreshSearch } = await useFetch<SearchItem[]>(
+  "/api/demo/search",
+  {
+    default: () => [],
+    query: computed(() => ({ q: query.value })),
+  },
+)
 
-function cosineSimilarity(a: number[], b: number[]) {
-  const len = Math.min(a.length, b.length)
-  let dot = 0
-  let aNorm = 0
-  let bNorm = 0
-  for (let i = 0; i < len; i += 1) {
-    dot += a[i] * b[i]
-    aNorm += a[i] * a[i]
-    bNorm += b[i] * b[i]
-  }
-  const denom = Math.sqrt(aNorm) * Math.sqrt(bNorm)
-  return denom === 0 ? 0 : dot / denom
-}
+watchEffect(() => {
+  notes.value = notesData.value || []
+})
 
-async function embedText(text: string) {
-  const embedder = await getEmbedder()
-  const output = await embedder(text, { pooling: "mean", normalize: true })
-  if (Array.isArray(output)) return output.map((value) => Number(value))
-  if (output && typeof output === "object" && "data" in output) return Array.from((output as { data: ArrayLike<number> }).data).map(Number)
-  return []
-}
+onMounted(() => {
+  void refreshNotes()
+})
+
+const searchResults = computed(() => searchData.value || [])
 
 async function addNote() {
   const text = note.value.trim()
   if (!text) return
   busy.value = true
-  status.value = "Embedding note..."
+  status.value = "Embedding note on the server..."
   try {
-    const embedding = await embedText(text)
-    notes.value = [
-      {
-        id: crypto.randomUUID(),
-        text,
-        preview: text.slice(0, 120),
-        embedding,
-      },
-      ...notes.value,
-    ]
+    const created = await $fetch<{ ok: true; note: NoteItem }>("/api/demo/notes", {
+      method: "POST",
+      body: { text },
+    })
+    note.value = ""
+    await refreshNotes()
+    await refreshSearch()
     status.value = "Note stored in memory"
-    await searchNotes()
   } catch (error) {
-    status.value = error instanceof Error ? error.message : "Failed to embed note"
+    status.value = error instanceof Error ? error.message : "Failed to store note"
   } finally {
     busy.value = false
   }
 }
 
 async function searchNotes() {
-  const q = query.value.trim()
-  if (!q) {
-    searchResults.value = []
-    return
-  }
-
   busy.value = true
-  status.value = "Searching embeddings..."
+  status.value = "Searching on the server..."
   try {
-    const queryEmbedding = await embedText(q)
-    searchResults.value = notes.value
-      .filter((item): item is NoteItem & { embedding: number[] } => Array.isArray(item.embedding))
-      .map((item) => ({
-        id: item.id,
-        text: item.text,
-        preview: item.preview,
-        score: cosineSimilarity(queryEmbedding, item.embedding),
-      }))
-      .sort((a, b) => b.score - a.score)
+    await refreshSearch()
+    status.value = "Search updated"
   } catch (error) {
     status.value = error instanceof Error ? error.message : "Search failed"
   } finally {
@@ -180,72 +139,68 @@ async function searchNotes() {
 function formatScore(score: number) {
   return `${Math.round(score * 100)}%`
 }
-
-onMounted(() => {
-  void searchNotes()
-})
 </script>
 
 <style scoped>
-.shell {
+.page {
   min-height: 100vh;
-  padding: 48px 24px 64px;
-  background:
-    radial-gradient(circle at top left, rgba(72, 94, 255, 0.16), transparent 28%),
-    radial-gradient(circle at right top, rgba(35, 180, 140, 0.14), transparent 24%),
-    linear-gradient(180deg, #0b1020 0%, #11162b 100%);
-  color: #eef2ff;
+  padding: 40px 20px 60px;
+  background: linear-gradient(180deg, #f7f8fc 0%, #eef2ff 100%);
+  color: #0f172a;
   font-family: Inter, ui-sans-serif, system-ui, sans-serif;
 }
 
 .hero,
+.grid,
 .panel {
-  max-width: 1080px;
+  width: min(1080px, 100%);
   margin: 0 auto;
+  max-width: 100%;
+  padding: 0 20px;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
 }
 
 .hero {
-  margin-bottom: 24px;
+  margin-bottom: 20px;
 }
 
 .eyebrow {
-  text-transform: uppercase;
-  letter-spacing: 0.18em;
-  color: #8ea0ff;
-  font-size: 0.75rem;
   margin: 0 0 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  color: #4f46e5;
+  font-size: 0.75rem;
 }
 
 h1 {
-  font-size: clamp(2.3rem, 5vw, 4.8rem);
-  line-height: 0.98;
   margin: 0;
-  max-width: 12ch;
+  font-size: clamp(2rem, 4vw, 4rem);
+  line-height: 1;
+  max-width: 14ch;
 }
 
 .lede {
-  max-width: 72ch;
-  color: rgba(238, 242, 255, 0.76);
-  font-size: 1.05rem;
-  line-height: 1.65;
-  margin-top: 14px;
+  margin: 12px 0 0;
+  max-width: 65ch;
+  color: #475569;
+  line-height: 1.7;
 }
 
 .panel {
-  background: rgba(10, 15, 30, 0.72);
-  border: 1px solid rgba(148, 163, 184, 0.18);
-  border-radius: 24px;
+  background: #fff;
+  border: 1px solid #dbe2f0;
+  border-radius: 20px;
   padding: 20px;
-  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.35);
-  backdrop-filter: blur(16px);
+  box-shadow: 0 18px 50px rgba(15, 23, 42, 0.08);
 }
 
 .grid {
-  max-width: 1080px;
-  margin: 20px auto 0;
+  margin-top: 18px;
   display: grid;
-  grid-template-columns: 1.2fr 0.8fr;
-  gap: 20px;
+  grid-template-columns: 1.15fr 0.85fr;
+  gap: 18px;
 }
 
 .field {
@@ -254,30 +209,32 @@ h1 {
 }
 
 label {
-  color: #cfd7ff;
   font-size: 0.9rem;
+  color: #334155;
 }
 
 textarea,
 input {
   width: 100%;
-  border-radius: 16px;
-  border: 1px solid rgba(148, 163, 184, 0.22);
-  background: rgba(6, 10, 20, 0.8);
-  color: #eef2ff;
+  box-sizing: border-box;
+  border: 1px solid #cbd5e1;
+  border-radius: 14px;
+  background: #fff;
+  color: #0f172a;
   padding: 14px 16px;
   outline: none;
 }
 
 textarea:focus,
 input:focus {
-  border-color: rgba(123, 145, 255, 0.72);
-  box-shadow: 0 0 0 4px rgba(123, 145, 255, 0.12);
+  border-color: #6366f1;
+  box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.12);
 }
 
 .actions {
   display: flex;
-  gap: 14px;
+  flex-wrap: wrap;
+  gap: 12px;
   align-items: center;
   margin-top: 16px;
 }
@@ -286,19 +243,19 @@ input:focus {
   border: 0;
   border-radius: 999px;
   padding: 12px 18px;
-  color: #091120;
-  background: linear-gradient(135deg, #9fb0ff, #86f3d1);
+  background: #111827;
+  color: #fff;
   font-weight: 700;
   cursor: pointer;
 }
 
 .primary:disabled {
-  opacity: 0.7;
+  opacity: 0.65;
   cursor: progress;
 }
 
 .status {
-  color: rgba(238, 242, 255, 0.72);
+  color: #64748b;
   font-size: 0.95rem;
 }
 
@@ -309,32 +266,31 @@ input:focus {
   margin-top: 18px;
 }
 
-.result,
-.note {
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(148, 163, 184, 0.15);
-  border-radius: 18px;
+.card {
+  border: 1px solid #e2e8f0;
+  border-radius: 16px;
   padding: 14px 16px;
+  background: #f8fafc;
 }
 
-.result-head,
-.note-head {
+.card-row {
   display: flex;
   justify-content: space-between;
   gap: 12px;
   align-items: center;
 }
 
-.result p,
-.note p {
+.card p {
   margin: 8px 0 0;
-  color: rgba(238, 242, 255, 0.72);
-  line-height: 1.55;
+  color: #15191f;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+  font-weight: bold;
 }
 
 h2 {
   margin: 0;
-  font-size: 1.1rem;
+  font-size: 1.05rem;
 }
 
 @media (max-width: 900px) {

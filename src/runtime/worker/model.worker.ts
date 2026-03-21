@@ -1,4 +1,6 @@
-import { env, pipeline } from "@huggingface/transformers"
+import { pipeline } from "@huggingface/transformers"
+import { serializeWorkerResult } from "../shared/serialize"
+import { applyLocalModelEnvironment } from "../utils"
 
 type InitMessage = {
   type: "init"
@@ -7,7 +9,6 @@ type InitMessage = {
   model: string
   options?: Record<string, unknown>
   cacheDir?: string
-  localModelPath?: string
   allowRemoteModels?: boolean
   allowLocalModels?: boolean
 }
@@ -15,6 +16,7 @@ type InitMessage = {
 type RunMessage = {
   type: "run"
   id: string
+  requestId: string
   args: unknown[]
 }
 
@@ -32,10 +34,11 @@ self.onmessage = async (event: MessageEvent<Message>) => {
 
   try {
     if (message.type === "init") {
-      env.cacheDir = message.cacheDir || env.cacheDir
-      env.localModelPath = message.localModelPath || env.localModelPath
-      env.allowRemoteModels = message.allowRemoteModels ?? true
-      env.allowLocalModels = message.allowLocalModels ?? false
+      applyLocalModelEnvironment({
+        cacheDir: message.cacheDir || "./.ai-models",
+        allowRemoteModels: message.allowRemoteModels ?? true,
+        allowLocalModels: message.allowLocalModels ?? false,
+      })
 
       if (!pipelines.has(message.id)) {
         pipelines.set(message.id, pipeline(message.task as any, message.model, message.options || {}))
@@ -55,10 +58,11 @@ self.onmessage = async (event: MessageEvent<Message>) => {
     if (!model) throw new Error("Model pipeline is not initialized.")
     const resolved = await model
     const result = await resolved(...message.args)
-    self.postMessage({ id: message.id, ok: true, type: "run", result })
+    self.postMessage({ id: message.id, requestId: message.requestId, ok: true, type: "run", result: serializeWorkerResult(result) })
   } catch (error) {
     self.postMessage({
       id: message.id,
+      requestId: message.type === "run" ? message.requestId : undefined,
       ok: false,
       type: message.type,
       error: error instanceof Error ? error.message : String(error),

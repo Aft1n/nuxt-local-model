@@ -1,10 +1,11 @@
+/// <reference path="../dist/runtime/nuxt.d.ts" />
 export default defineNuxtConfig({
-  modules: ["../src/module"],
+  modules: ["nuxt-local-model"],
   localModel: {
-    // The app cache path can be local/dev-only; the Docker container uses /models-cache.
+    // One cache folder covers both downloads and local reuse.
     cacheDir: "./.ai-models",
-    // In Docker, this path should match the mounted volume path.
-    localModelPath: "/models-cache",
+    serverWorker: true,
+    browserWorker: false,
     models: {
       embedding: {
         task: "feature-extraction",
