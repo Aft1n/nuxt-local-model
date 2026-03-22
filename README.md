@@ -307,18 +307,6 @@ Run it with:
 npm run dev
 ```
 
-## Publishing
-
-If you want to publish this module to GitHub and npm:
-
-1. `cd nuxt-local-model`
-2. `git init`
-3. commit the files
-4. create a GitHub repository
-5. connect the remote and push
-6. run `npm login`
-7. publish with `npm publish --access public`
-
 ## Notes
 
 - This module is intentionally generic and does not ship opinionated preset models.
