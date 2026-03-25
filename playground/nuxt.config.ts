@@ -1,5 +1,8 @@
+import type {} from "../src/runtime/nuxt"
+import nuxtLocalModel from "../src/module"
+
 export default defineNuxtConfig({
-  modules: ["nuxt-local-model"],
+  modules: [nuxtLocalModel],
   localModel: {
     cacheDir: "./.ai-models",
     serverWorker: true,
@@ -10,10 +13,6 @@ export default defineNuxtConfig({
         model: "Xenova/all-MiniLM-L6-v2",
         options: {
           dtype: "q8",
-        },
-        callOptions: {
-          pooling: "mean",
-          normalize: true,
         },
       },
     },

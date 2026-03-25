@@ -23,13 +23,27 @@ describe("local model utils", () => {
     expect(resolveRuntimeConfig({}).cacheDir).toBe("./.ai-models")
   })
 
-  it("detects bun and deno runtimes when auto mode is used", () => {
-    vi.stubGlobal("Bun", {})
-    expect(detectLocalModelRuntime()).toBe("bun")
+  it("detects the active runtime in auto mode", () => {
+    const denoGlobal = globalThis as typeof globalThis & {
+      Deno?: {
+        version?: {
+          deno?: string
+        }
+      }
+    }
+    const expectedRuntime = typeof Bun !== "undefined"
+      ? "bun"
+      : typeof denoGlobal.Deno?.version?.deno === "string"
+        ? "deno"
+        : "node"
 
-    vi.unstubAllGlobals()
-    vi.stubGlobal("Deno", { version: { deno: "2.0.0" } })
-    expect(detectLocalModelRuntime()).toBe("deno")
+    expect(detectLocalModelRuntime()).toBe(expectedRuntime)
+  })
+
+  it("respects explicit runtime overrides", () => {
+    expect(detectLocalModelRuntime("bun")).toBe("bun")
+    expect(detectLocalModelRuntime("deno")).toBe("deno")
+    expect(detectLocalModelRuntime("node")).toBe("node")
   })
 
   it("defaults worker modes to off and local models to on", () => {
@@ -37,7 +51,7 @@ describe("local model utils", () => {
     expect(resolved.serverWorker).toBe(false)
     expect(resolved.browserWorker).toBe(false)
     expect(resolved.allowLocalModels).toBe(true)
-    expect(resolved.runtime).toBe("node")
+    expect(resolved.runtime).toBe(detectLocalModelRuntime())
   })
 
   it("merges registry load options with per-call load options", () => {

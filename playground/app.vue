@@ -65,7 +65,7 @@
 type NoteItem = {
   id: string
   content: string
-  embedding: number[] | null
+  embedding: number[]
 }
 
 type SearchItem = {

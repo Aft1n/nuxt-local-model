@@ -1,9 +1,12 @@
 {
   "name": "nuxt-local-model",
-  "version": "0.1.5",
+  "version": "0.1.2",
   "description": "A Nuxt module for local in-app Hugging Face transformer models.",
   "license": "MIT",
   "repository": "https://github.com/Aft1n/nuxt-local-model",
+  "workspaces": [
+    "playground"
+  ],
   "files": [
     "dist",
     "README.md",
@@ -34,24 +37,33 @@
     "dev": "nuxi dev playground",
     "build": "nuxt build-module",
     "prepare": "nuxt build-module --prepare",
-    "test": "vitest run",
-    "test:watch": "vitest"
+    "test": "vitest run --config vitest.config.ts",
+    "test:watch": "vitest --config vitest.config.ts",
+    "prepack": "nuxt-module-build build",
+    "dev:build": "nuxt build playground",
+    "dev:prepare": "nuxt-module-build build --stub && nuxt-module-build prepare && nuxt prepare playground",
+    "release": "npm run lint && npm run test && npm run test:types && npm run prepack && changelogen --release && npm publish && git push --follow-tags",
+    "lint": "oxlint .",
+    "test:types": "vue-tsc --noEmit && nuxt prepare playground && cd playground && vue-tsc --noEmit"
   },
   "dependencies": {
     "@huggingface/transformers": "^3.8.1",
-    "onnxruntime-node": "^1.21.0"
+    "onnxruntime-node": "^1.24.3"
   },
   "devDependencies": {
-    "@nuxt/kit": "^4.3.0",
+    "@nuxt/kit": "^4.4.2",
     "@nuxt/module-builder": "^1.0.2",
     "@nuxt/test-utils": "^4.0.0",
-    "@types/node": "^24.0.0",
-    "nuxt": "^4.3.0",
+    "@types/node": "^24.12.0",
+    "changelogen": "^0.6.2",
+    "nuxt": "^4.4.2",
+    "oxlint": "^1.57.0",
     "typescript": "^5.9.3",
-    "vitest": "^4.0.18"
+    "vitest": "^4.1.1",
+    "vue-tsc": "^3.2.6"
   },
   "peerDependencies": {
-    "nuxt": "^4.3.0"
+    "nuxt": "^4.4.2"
   },
   "trustedDependencies": [
     "@parcel/watcher",

@@ -1,5 +1,5 @@
 import { addDemoNote, embedPendingDemoNotes, getDemoNote, getPendingDemoNotesCount } from "../../utils/demo-memory"
-import { getLocalModel } from "nuxt-local-model/server"
+import { getLocalModel } from "../../../../src/runtime/server"
 
 export default defineEventHandler(async (event) => {
   const body = await readBody<{ text?: string }>(event)
@@ -18,7 +18,7 @@ export default defineEventHandler(async (event) => {
 
   const pendingCount = getPendingDemoNotesCount()
   console.info(`🧪 [playground] embedding ${pendingCount} note${pendingCount === 1 ? "" : "s"} on the server`)
-  const embedder = await getLocalModel("embedding")
+  const embedder = await getLocalModel("embedding", { pooling: "mean", normalize: true })
   await embedPendingDemoNotes((content) => embedder(content))
 
   const embedded = getDemoNote(createdNote.id) || createdNote

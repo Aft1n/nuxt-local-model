@@ -20,6 +20,7 @@ A Nuxt module for easily integrating local Hugging Face transformer models into 
 - Easily use local models in your Nuxt app
 - Supports any Hugging Face task and model you want to configure
 - Auto-imported composable, `useLocalModel()` by default for frontend Vue code
+- Auto-imported `prewarmLocalModel()` helper for eager browser model loading
 - Server-safe helper, `getLocalModel()` for `server/api` and utilities
 - Fully configurable via `nuxt.config.ts`
 - Supports changing model names, tasks, and settings per usage
@@ -68,6 +69,9 @@ Once installed, you can use `useLocalModel()` in your Vue app code.
 
 For server routes and utilities, use `getLocalModel()`.
 
+If you want a browser model to start loading before a user interacts with the UI, use
+`prewarmLocalModel()` or enable `browserPrewarm` in `nuxt.config.ts`.
+
 ### Basic Example
 
 ```vue
@@ -104,6 +108,7 @@ export default defineNuxtConfig({
     defaultTask: "feature-extraction", // default pipeline type when a model entry does not override it
     serverWorker: false, // run inference in a server worker thread on Node, Bun, or Deno
     browserWorker: false, // run inference in a browser Web Worker; avoid this for very large models
+    browserPrewarm: false, // false disables client prewarm, true warms all aliases, or pass ["embedding"] to warm specific aliases
     models: {
       embedding: {
         task: "feature-extraction", // the pipeline type for this alias
@@ -135,6 +140,41 @@ const model = await useLocalModel("embedding", {
 </script>
 ```
 
+### Prewarming a Model in the Browser
+
+```vue
+<script setup lang="ts">
+onMounted(() => {
+  void prewarmLocalModel("embedding", {
+    pooling: "mean",
+    normalize: true,
+  })
+})
+</script>
+```
+
+### Automatic Browser Prewarm
+
+```ts
+import { defineLocalModelConfig } from "nuxt-local-model"
+
+export default defineNuxtConfig({
+  modules: ["nuxt-local-model"],
+  localModel: defineLocalModelConfig({
+    browserWorker: true,
+    browserPrewarm: ["embedding"],
+    models: {
+      embedding: {
+        task: "feature-extraction",
+        model: "Xenova/all-MiniLM-L6-v2",
+      },
+    },
+  }),
+})
+```
+
+Set `browserPrewarm: true` to warm every configured alias on app mount, or pass a string array to warm only selected aliases.
+
 ## Configuration Options
 
 You can configure the module in your `nuxt.config.ts`:
@@ -152,6 +192,7 @@ export default defineNuxtConfig({
     defaultTask: "feature-extraction", // default for aliases that do not override task
     serverWorker: true, // use a server worker thread so inference does not block the main server thread
     browserWorker: false, // enable only if you intentionally want browser-side inference
+    browserPrewarm: false, // eager client-side prewarm: false, true, or a list of aliases
     models: {
       embedding: {
         task: "feature-extraction", // embeddings usually use feature-extraction

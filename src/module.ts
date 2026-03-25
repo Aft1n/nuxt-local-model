@@ -1,12 +1,17 @@
-/// <reference path="./runtime/nuxt.d.ts" />
+import type {} from "./runtime/nuxt"
 import { defineNuxtModule, addImports, addPlugin, createResolver } from "@nuxt/kit"
 import { existsSync } from "node:fs"
+import type { NuxtModule } from "@nuxt/schema"
 import type { LocalModelRuntimeConfig } from "./runtime/types"
 import { setLocalModelRuntimeConfig } from "./runtime/shared/local-model"
 
-export interface NuxtLlmModuleOptions extends LocalModelRuntimeConfig {}
+type LocalModelPublicRuntimeConfig = LocalModelRuntimeConfig & {
+  serverWorkerEntry?: string
+}
 
-export default defineNuxtModule<NuxtLlmModuleOptions>().with({
+export type NuxtLlmModuleOptions = LocalModelRuntimeConfig
+
+const module: NuxtModule<NuxtLlmModuleOptions, NuxtLlmModuleOptions, false> = defineNuxtModule<NuxtLlmModuleOptions>({
   meta: {
     name: "nuxt-local-model",
     configKey: "localModel",
@@ -19,6 +24,7 @@ export default defineNuxtModule<NuxtLlmModuleOptions>().with({
     defaultTask: "feature-extraction",
     serverWorker: false,
     browserWorker: false,
+    browserPrewarm: false,
     models: {},
   },
   setup(options, nuxt) {
@@ -31,8 +37,10 @@ export default defineNuxtModule<NuxtLlmModuleOptions>().with({
       serverWorkerEntry,
     })
 
-    nuxt.options.runtimeConfig.public ||= {}
-    ;(nuxt.options.runtimeConfig.public as { localModel?: Record<string, unknown> }).localModel = {
+    const publicRuntimeConfig = nuxt.options.runtimeConfig.public as Record<string, unknown> & {
+      localModel?: LocalModelPublicRuntimeConfig
+    }
+    publicRuntimeConfig.localModel = {
       cacheDir: options.cacheDir,
       allowRemoteModels: options.allowRemoteModels,
       allowLocalModels: options.allowLocalModels,
@@ -41,11 +49,17 @@ export default defineNuxtModule<NuxtLlmModuleOptions>().with({
       serverWorker: options.serverWorker,
       serverWorkerEntry,
       browserWorker: options.browserWorker,
+      browserPrewarm: options.browserPrewarm,
       models: options.models,
     }
 
     addImports({
       name: "useLocalModel",
+      from: resolve("./runtime/composables/useLocalModel"),
+    })
+
+    addImports({
+      name: "prewarmLocalModel",
       from: resolve("./runtime/composables/useLocalModel"),
     })
 
@@ -73,3 +87,5 @@ export default defineNuxtModule<NuxtLlmModuleOptions>().with({
     })
   },
 })
+
+export default module

@@ -1,6 +1,3 @@
-import { pipeline } from "@huggingface/transformers"
-import type { Pipeline } from "@huggingface/transformers"
-
 export type LocalModelSupportedRuntime = "node" | "bun" | "deno"
 export type LocalModelRuntime = "auto" | LocalModelSupportedRuntime
 
@@ -12,9 +9,14 @@ export type LocalModelTask =
   | "automatic-speech-recognition"
   | (string & {})
 
-export type LocalModelPipeline = Pipeline
-export type LocalModelPipelineOptions = NonNullable<Parameters<Pipeline>[1]>
-export type LocalModelPipelineLoadOptions = NonNullable<Parameters<typeof pipeline>[2]>
+type LocalModelCallable = (...args: unknown[]) => Promise<unknown>
+
+export type LocalModelPipeline = LocalModelCallable & {
+  dispose?: () => Promise<void> | void
+}
+export type LocalModelPipelineOptions = Record<string, unknown>
+export type LocalModelPipelineLoadOptions = Record<string, unknown>
+export type LocalModelPrewarmTargets = boolean | string[]
 
 export interface LocalModelDefinition {
   task: LocalModelTask
@@ -34,11 +36,12 @@ export interface LocalModelRuntimeConfig<TModels extends LocalModelModelRegistry
   defaultTask?: LocalModelTask
   serverWorker?: boolean
   browserWorker?: boolean
+  browserPrewarm?: LocalModelPrewarmTargets
   models?: TModels
 }
 
 export type LocalModelConfig<TModels extends LocalModelModelRegistry = LocalModelModelRegistry> = LocalModelRuntimeConfig<TModels>
 
-export type LocalModelRunner = ((...args: any[]) => Promise<unknown>) & {
+export type LocalModelRunner = LocalModelCallable & {
   dispose?: () => Promise<void> | void
 }

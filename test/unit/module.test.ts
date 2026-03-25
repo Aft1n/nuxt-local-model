@@ -1,4 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest"
+import module from "../../src/module"
+import type { LocalModelRuntimeConfig } from "../../src/runtime/types"
 
 const {
   addImports,
@@ -19,9 +21,7 @@ const {
 }))
 
 vi.mock("@nuxt/kit", () => ({
-  defineNuxtModule: () => ({
-    with: (config: any) => config,
-  }),
+  defineNuxtModule: <T>(config: T) => config,
   addImports,
   addPlugin,
   createResolver,
@@ -36,9 +36,24 @@ vi.mock("../../src/runtime/shared/local-model", () => ({
   loadLocalModel,
 }))
 
-import module from "../../src/module"
+type TestedModule = {
+  meta: {
+    configKey: string
+  }
+  setup: (
+    options: LocalModelRuntimeConfig,
+    nuxt: {
+      options: {
+        runtimeConfig: {
+          public: Record<string, unknown>
+        }
+      }
+      hook: (name: string, callback: () => Promise<void>) => void
+    },
+  ) => void
+}
 
-const testedModule = module as any
+const testedModule = module as unknown as TestedModule
 
 describe("module metadata", () => {
   beforeEach(() => {
@@ -51,6 +66,7 @@ describe("module metadata", () => {
 
   it("registers imports, plugins, runtime config, and startup warmup", async () => {
     let readyHook: (() => Promise<void>) | undefined
+    type SetupNuxt = Parameters<typeof testedModule.setup>[1]
     const nuxt = {
       options: {
         runtimeConfig: {
@@ -62,7 +78,7 @@ describe("module metadata", () => {
           readyHook = callback
         }
       }),
-    }
+    } satisfies SetupNuxt
 
     const options = {
       runtime: "deno" as const,
@@ -72,6 +88,7 @@ describe("module metadata", () => {
       defaultTask: "feature-extraction" as const,
       serverWorker: true,
       browserWorker: false,
+      browserPrewarm: ["embedding"],
       models: {
         embedding: {
           task: "feature-extraction" as const,
@@ -80,7 +97,7 @@ describe("module metadata", () => {
       },
     }
 
-    testedModule.setup(options, nuxt as any)
+    testedModule.setup(options, nuxt)
 
     expect(setLocalModelRuntimeConfig).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -93,6 +110,10 @@ describe("module metadata", () => {
       name: "useLocalModel",
       from: "/resolved./runtime/composables/useLocalModel",
     })
+    expect(addImports).toHaveBeenCalledWith({
+      name: "prewarmLocalModel",
+      from: "/resolved./runtime/composables/useLocalModel",
+    })
     expect(addPlugin).toHaveBeenNthCalledWith(1, {
       src: "/resolved./runtime/plugins/hf-transformers.server",
     })
@@ -101,10 +122,11 @@ describe("module metadata", () => {
       mode: "client",
     })
 
-    expect((nuxt.options.runtimeConfig.public as any).localModel).toMatchObject({
+    expect((nuxt.options.runtimeConfig.public as { localModel?: unknown }).localModel).toMatchObject({
       runtime: "deno",
       cacheDir: "./cache",
       serverWorker: true,
+      browserPrewarm: ["embedding"],
       models: options.models,
       serverWorkerEntry: "/resolved./runtime/server/worker.js",
     })

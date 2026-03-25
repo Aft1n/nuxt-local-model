@@ -1,12 +1,11 @@
-import { parentPort, workerData } from "node:worker_threads"
-import { isMainThread, threadId } from "node:worker_threads"
-import { pipeline } from "@huggingface/transformers"
+import { isMainThread, parentPort, threadId, workerData } from "node:worker_threads"
+import type { LocalModelPipeline, LocalModelTask } from "../types"
 import { serializeWorkerResult } from "../shared/serialize"
 import { applyLocalModelEnvironment } from "../utils"
 
 const { id, task, model, options, cacheDir, allowRemoteModels, allowLocalModels } = workerData as {
   id: string
-  task: string
+  task: LocalModelTask
   model: string
   options?: Record<string, unknown>
   cacheDir?: string
@@ -14,17 +13,25 @@ const { id, task, model, options, cacheDir, allowRemoteModels, allowLocalModels 
   allowLocalModels?: boolean
 }
 
-applyLocalModelEnvironment({
-  cacheDir: cacheDir || "./.ai-models",
-  allowRemoteModels: allowRemoteModels ?? true,
-  allowLocalModels: allowLocalModels ?? true,
-})
+const modelPromise = (async () => {
+  await applyLocalModelEnvironment({
+    cacheDir: cacheDir || "./.ai-models",
+    allowRemoteModels: allowRemoteModels ?? true,
+    allowLocalModels: allowLocalModels ?? true,
+  })
 
-console.info(
-  `🧵 [nuxt-local-model] server worker ready threadId=${threadId} mainThread=${isMainThread} cacheDir=${cacheDir || "./.ai-models"}`,
-)
+  console.info(
+    `🧵 [nuxt-local-model] server worker ready threadId=${threadId} mainThread=${isMainThread} cacheDir=${cacheDir || "./.ai-models"}`,
+  )
 
-const modelPromise = pipeline(task as any, model, options || {})
+  const { pipeline } = await import("@huggingface/transformers")
+  const pipelineFactory = pipeline as unknown as (
+    task: LocalModelTask,
+    model: string,
+    options?: Record<string, unknown>,
+  ) => Promise<LocalModelPipeline>
+  return pipelineFactory(task, model, options || {})
+})()
 
 parentPort?.on("message", async (message: { type: "run"; requestId: string; args: unknown[] } | { type: "dispose" }) => {
   try {

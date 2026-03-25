@@ -1,4 +1,3 @@
-import { env } from "@huggingface/transformers"
 import type {
   LocalModelDefinition,
   LocalModelModelRegistry,
@@ -19,6 +18,7 @@ export interface ResolvedLocalModelRuntimeConfig extends Omit<InternalLocalModel
   cacheDir: string
   allowRemoteModels: boolean
   allowLocalModels: boolean
+  browserPrewarm: boolean | string[]
 }
 
 interface SplitUseOptionsResult {
@@ -77,11 +77,15 @@ export function resolveRuntimeConfig(config?: InternalLocalModelRuntimeConfig): 
     serverWorker: config?.serverWorker ?? false,
     serverWorkerEntry: config?.serverWorkerEntry,
     browserWorker: config?.browserWorker ?? false,
+    browserPrewarm: config?.browserPrewarm ?? false,
     models: config?.models ?? {},
   }
 }
 
-export function applyLocalModelEnvironment(config: Pick<ResolvedLocalModelRuntimeConfig, "cacheDir" | "allowRemoteModels" | "allowLocalModels">) {
+export async function applyLocalModelEnvironment(
+  config: Pick<ResolvedLocalModelRuntimeConfig, "cacheDir" | "allowRemoteModels" | "allowLocalModels">,
+) {
+  const { env } = await import("@huggingface/transformers")
   env.cacheDir = resolveCacheDir(config.cacheDir)
   env.localModelPath = env.cacheDir
   env.allowRemoteModels = config.allowRemoteModels

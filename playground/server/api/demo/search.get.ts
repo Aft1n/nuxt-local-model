@@ -1,5 +1,5 @@
 import { embedPendingDemoNotes, getDemoNotes, toVector } from "../../utils/demo-memory"
-import { getLocalModel } from "nuxt-local-model/server"
+import { getLocalModel } from "../../../../src/runtime/server"
 
 function cosineSimilarity(a: number[], b: number[]) {
   const len = Math.min(a.length, b.length)
@@ -7,9 +7,11 @@ function cosineSimilarity(a: number[], b: number[]) {
   let aNorm = 0
   let bNorm = 0
   for (let i = 0; i < len; i += 1) {
-    dot += a[i] * b[i]
-    aNorm += a[i] * a[i]
-    bNorm += b[i] * b[i]
+    const aValue = a[i] ?? 0
+    const bValue = b[i] ?? 0
+    dot += aValue * bValue
+    aNorm += aValue * aValue
+    bNorm += bValue * bValue
   }
   const denom = Math.sqrt(aNorm) * Math.sqrt(bNorm)
   return denom === 0 ? 0 : dot / denom
@@ -23,7 +25,7 @@ export default defineEventHandler(async (event) => {
     return []
   }
 
-  const embedder = await getLocalModel("embedding")
+  const embedder = await getLocalModel("embedding", { pooling: "mean", normalize: true })
   await embedPendingDemoNotes((content) => embedder(content))
   const output = await embedder(query)
   const queryEmbedding = toVector(output)

@@ -1,4 +1,3 @@
-import { pipeline } from "@huggingface/transformers"
 import type { LocalModelPipeline, LocalModelPipelineOptions, LocalModelRuntimeConfig } from "../types"
 import {
   applyLocalModelEnvironment,
@@ -14,12 +13,6 @@ const serverWorkerCache = new Map<string, Promise<LocalModelPipeline>>()
 const warnedMessages = new Set<string>()
 let onnxBackendPromise: Promise<void> | null = null
 const runtimeConfigSymbol = Symbol.for("nuxt-local-model:runtime-config")
-const pipelineFactory = pipeline as unknown as (
-  task: string,
-  model: string,
-  options?: Record<string, unknown>,
-) => Promise<LocalModelPipeline>
-
 type ServerWorkerMessage =
   | {
       id: string
@@ -37,7 +30,7 @@ type ServerWorkerMessage =
     }
 
 function getRuntimeConfigStore(): InternalLocalModelRuntimeConfig | null {
-  return (globalThis as Record<PropertyKey, unknown>)[runtimeConfigSymbol] as InternalLocalModelRuntimeConfig | null || null
+  return ((globalThis as Record<PropertyKey, unknown>)[runtimeConfigSymbol] as InternalLocalModelRuntimeConfig | null) || null
 }
 
 function setRuntimeConfigStore(config: InternalLocalModelRuntimeConfig | null) {
@@ -54,7 +47,13 @@ function cacheKey(name: string, task: string, model: string, cacheDir: string) {
   return [name, task, model, cacheDir].join("::")
 }
 
-function createPipelineRunner(task: string, model: string, options: Record<string, unknown>): Promise<LocalModelPipeline> {
+async function createPipelineRunner(task: string, model: string, options: Record<string, unknown>) {
+  const { pipeline } = await import("@huggingface/transformers")
+  const pipelineFactory = pipeline as unknown as (
+    task: string,
+    model: string,
+    options?: Record<string, unknown>,
+  ) => Promise<LocalModelPipeline>
   return pipelineFactory(task, model, options)
 }
 
@@ -89,7 +88,8 @@ async function ensurePreferredOnnxBackend(config: ResolvedLocalModelRuntimeConfi
 
   onnxBackendPromise = (async () => {
     try {
-      const ort = await import("onnxruntime-node")
+      const onnxruntimeNodeId = "onnxruntime-node"
+      const ort = await import(/* @vite-ignore */ onnxruntimeNodeId)
       const backend = (ort.default ?? ort) as typeof ort
       const symbol = Symbol.for("onnxruntime")
       if (!(symbol in globalThis)) {
@@ -191,7 +191,7 @@ function createServerWorkerRunner(
       })
 
       return Object.assign(
-        async (...args: any[]) =>
+        async (...args: unknown[]) =>
           new Promise((runResolve, runReject) => {
             const requestId = `${key}:${Date.now()}:${Math.random().toString(16).slice(2)}`
             const timeout = setTimeout(() => {
@@ -250,10 +250,10 @@ export async function loadLocalModel(
     }
   }
 
-  applyLocalModelEnvironment({
+  await applyLocalModelEnvironment({
     cacheDir,
     allowRemoteModels: resolvedConfig.allowRemoteModels,
-    allowLocalModels: resolvedConfig.allowLocalModels,
+    allowLocalModels: typeof window === "undefined" ? resolvedConfig.allowLocalModels : false,
   })
 
   const key = cacheKey(name, definition.task, definition.model, cacheDir)
@@ -263,9 +263,13 @@ export async function loadLocalModel(
       const loaded = await createPipelineRunner(definition.task, definition.model, definition.options || {})
 
       return Object.assign(
-        async (...args: any[]) => {
+        async (...args: unknown[]) => {
           const input = args[0]
-          return loaded(input, callOptions as Record<string, unknown>)
+          const runtimeCallOptions = (args[1] as Record<string, unknown> | undefined) || {}
+          return loaded(input, {
+            ...(callOptions as Record<string, unknown>),
+            ...runtimeCallOptions,
+          })
         },
         {
           dispose: async () => {

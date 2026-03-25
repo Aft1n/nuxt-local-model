@@ -1,12 +1,38 @@
 import { useRuntimeConfig } from "nuxt/app"
 import type { LocalModelPipeline, LocalModelRunner, LocalModelPipelineOptions } from "../types"
-import { getLocalModel, loadLocalModel } from "../shared/local-model"
-import { resolveModelDefinition, resolveRuntimeConfig } from "../utils"
+import { type InternalLocalModelRuntimeConfig, resolveModelDefinition, resolveRuntimeConfig } from "../utils"
 
 const workerCache = new Map<string, Promise<LocalModelRunner>>()
+const BROWSER_WORKER_INIT_TIMEOUT_MS = 45000
+
+function formatWorkerError(error: unknown) {
+  if (error instanceof Error) return error.message
+
+  if (typeof ErrorEvent !== "undefined" && error instanceof ErrorEvent) {
+    const parts = [error.message, error.filename, error.lineno ? `:${error.lineno}` : "", error.colno ? `:${error.colno}` : ""]
+      .filter(Boolean)
+      .join("")
+    return parts || "Browser worker error event"
+  }
+
+  if (typeof error === "object" && error) {
+    const candidate = error as { message?: unknown; filename?: unknown; lineno?: unknown; colno?: unknown; type?: unknown }
+    const parts = [
+      typeof candidate.message === "string" ? candidate.message : "",
+      typeof candidate.filename === "string" ? candidate.filename : "",
+      typeof candidate.lineno === "number" ? `:${candidate.lineno}` : "",
+      typeof candidate.colno === "number" ? `:${candidate.colno}` : "",
+      typeof candidate.type === "string" ? ` (${candidate.type})` : "",
+    ].filter(Boolean)
+    if (parts.length) return parts.join("")
+  }
+
+  return String(error)
+}
 
 export async function useLocalModel(name: string, callOptions: LocalModelPipelineOptions = {}) {
-  const runtimeConfig = resolveRuntimeConfig(useRuntimeConfig().public.localModel as any)
+  const publicRuntimeConfig = useRuntimeConfig().public as { localModel?: InternalLocalModelRuntimeConfig }
+  const runtimeConfig = resolveRuntimeConfig(publicRuntimeConfig.localModel)
   const cacheDir = runtimeConfig.cacheDir
   const useBrowserWorker = runtimeConfig.browserWorker ?? false
   const definition = resolveModelDefinition(name, runtimeConfig)
@@ -23,7 +49,6 @@ export async function useLocalModel(name: string, callOptions: LocalModelPipelin
           definition.model,
           pipelineOptions,
           cacheDir,
-          callOptions,
           runtimeConfig,
         ).catch((error) => {
           workerCache.delete(key)
@@ -31,14 +56,34 @@ export async function useLocalModel(name: string, callOptions: LocalModelPipelin
         }),
       )
     }
-    return workerCache.get(key) as Promise<LocalModelRunner>
+
+    return (workerCache.get(key) as Promise<LocalModelRunner>).then((runner) =>
+      Object.assign(
+        async (...args: unknown[]) => {
+          const runtimeCallOptions = {
+            ...callOptions,
+            ...((args[1] as Record<string, unknown> | undefined) || {}),
+          }
+          return runner(args[0], runtimeCallOptions)
+        },
+        {
+          dispose: runner.dispose ? async () => runner.dispose?.() : undefined,
+        },
+      ) as LocalModelRunner,
+    )
   }
 
   if (process.server) {
+    const { getLocalModel } = await import("../shared/local-model")
     return getLocalModel(name, callOptions) as Promise<LocalModelPipeline | LocalModelRunner>
   }
 
+  const { loadLocalModel } = await import("../shared/local-model")
   return loadLocalModel(name, runtimeConfig, callOptions)
+}
+
+export async function prewarmLocalModel(name: string, callOptions: LocalModelPipelineOptions = {}) {
+  return useLocalModel(name, callOptions)
 }
 
 function createBrowserWorkerRunner(
@@ -47,7 +92,6 @@ function createBrowserWorkerRunner(
   model: string,
   options: Record<string, unknown>,
   cacheDir: string,
-  callOptions: Record<string, unknown>,
   runtimeConfig: ReturnType<typeof resolveRuntimeConfig>,
 ): Promise<LocalModelRunner> {
   return new Promise((resolve, reject) => {
@@ -60,6 +104,13 @@ function createBrowserWorkerRunner(
       }
     >()
     let settled = false
+    const initTimeout = setTimeout(() => {
+      if (settled) return
+      settled = true
+      workerCache.delete(id)
+      worker.terminate()
+      reject(new Error(`Browser worker model initialization timed out after ${BROWSER_WORKER_INIT_TIMEOUT_MS}ms`))
+    }, BROWSER_WORKER_INIT_TIMEOUT_MS)
 
     const failPendingRuns = (reason: string) => {
       for (const [, pending] of pendingRuns) {
@@ -69,11 +120,12 @@ function createBrowserWorkerRunner(
     }
 
     const runner: LocalModelRunner = Object.assign(
-      async (...args: any[]) =>
+      async (...args: unknown[]) =>
         new Promise((runResolve, runReject) => {
           const requestId = `${id}:${Date.now()}:${Math.random().toString(16).slice(2)}`
           pendingRuns.set(requestId, { resolve: runResolve, reject: runReject })
-          worker.postMessage({ type: "run", id, requestId, args: [args[0], callOptions] })
+          const runOptions = (args[1] as Record<string, unknown> | undefined) || {}
+          worker.postMessage({ type: "run", id, requestId, args: [args[0], runOptions] })
         }),
       {
         dispose: () => {
@@ -90,23 +142,34 @@ function createBrowserWorkerRunner(
       if (event.data.id !== id || event.data.type !== "init") return
       worker.removeEventListener("message", handleInit)
       if (!event.data.ok) {
+        clearTimeout(initTimeout)
         settled = true
         workerCache.delete(id)
         reject(new Error(event.data.error || "Worker model initialization failed"))
         return
       }
 
+      clearTimeout(initTimeout)
       settled = true
       resolve(runner)
     }
 
     worker.addEventListener("message", handleInit)
+    worker.addEventListener("message", (event: MessageEvent<{ id?: string; type?: string; message?: string; meta?: unknown }>) => {
+      if (event.data?.id !== id || event.data?.type !== "debug") return
+      console.log(`[nuxt-local-model] [browser-worker:${id}] ${event.data.message || "debug"}`, event.data.meta ?? "")
+    })
+    worker.addEventListener("messageerror", (event) => {
+      console.error(`[nuxt-local-model] [browser-worker:${id}] messageerror`, event)
+    })
     worker.onerror = (error) => {
+      clearTimeout(initTimeout)
+      console.error(`[nuxt-local-model] [browser-worker:${id}] error`, error)
       failPendingRuns("Browser worker crashed")
       workerCache.delete(id)
       if (!settled) {
         settled = true
-        reject(error)
+        reject(new Error(formatWorkerError(error)))
       }
     }
 
@@ -129,7 +192,7 @@ function createBrowserWorkerRunner(
       options,
       cacheDir,
       allowRemoteModels: runtimeConfig.allowRemoteModels,
-      allowLocalModels: runtimeConfig.allowLocalModels,
+      allowLocalModels: false,
     })
   })
 }

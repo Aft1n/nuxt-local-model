@@ -1,7 +1,7 @@
 import { defineNuxtPlugin, useRuntimeConfig } from "nuxt/app"
 import { readdir, stat } from "node:fs/promises"
 import { setLocalModelRuntimeConfig } from "../shared/local-model"
-import { applyLocalModelEnvironment, resolveRuntimeConfig } from "../utils"
+import { applyLocalModelEnvironment, type InternalLocalModelRuntimeConfig, resolveRuntimeConfig } from "../utils"
 
 async function countCachedEntries(cacheDir: string) {
   try {
@@ -14,9 +14,10 @@ async function countCachedEntries(cacheDir: string) {
 
 export default defineNuxtPlugin(async () => {
   const runtimeConfig = useRuntimeConfig()
-  const localModel = resolveRuntimeConfig((runtimeConfig.public as { localModel?: Record<string, unknown> }).localModel as any)
+  const publicRuntimeConfig = runtimeConfig.public as { localModel?: InternalLocalModelRuntimeConfig }
+  const localModel = resolveRuntimeConfig(publicRuntimeConfig.localModel)
 
-  applyLocalModelEnvironment(localModel)
+  await applyLocalModelEnvironment(localModel)
   setLocalModelRuntimeConfig(localModel)
 
   const modelNames = Object.keys(localModel.models || {})

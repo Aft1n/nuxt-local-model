@@ -1,11 +1,10 @@
 {
   "extends": "./.nuxt/tsconfig.json",
-  "compilerOptions": {
-    "types": ["node"]
-  },
   "include": [
+    ".nuxt/**/*.d.ts",
     "app.vue",
     "nuxt.config.ts",
+    "../src/runtime/nuxt.d.ts",
     "../dist/module.d.mts",
     "../dist/runtime/nuxt.d.ts"
   ]
