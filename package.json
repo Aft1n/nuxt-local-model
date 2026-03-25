@@ -1,6 +1,6 @@
 {
   "name": "nuxt-local-model",
-  "version": "0.1.6",
+  "version": "0.1.8",
   "description": "A Nuxt module for local in-app Hugging Face transformer models.",
   "license": "MIT",
   "repository": "https://github.com/Aft1n/nuxt-local-model",
