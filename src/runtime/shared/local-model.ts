@@ -1,4 +1,11 @@
-import type { LocalModelPipeline, LocalModelPipelineOptions, LocalModelRuntimeConfig } from "../types"
+import type {
+  LocalModelCallOptionsForName,
+  LocalModelName,
+  LocalModelPipeline,
+  LocalModelPipelineOptions,
+  LocalModelResolvedModelForName,
+  LocalModelRuntimeConfig,
+} from "../types"
 import {
   applyLocalModelEnvironment,
   canUseServerWorkerForRuntime,
@@ -289,7 +296,10 @@ export async function loadLocalModel(
   return modelCache.get(key) as Promise<LocalModelPipeline>
 }
 
-export async function getLocalModel(name: string, callOptions: LocalModelPipelineOptions = {}) {
+export async function getLocalModel<TName extends LocalModelName>(
+  name: TName,
+  callOptions: LocalModelCallOptionsForName<TName> = {} as LocalModelCallOptionsForName<TName>,
+) {
   const runtimeConfig = getRuntimeConfigStore() || resolveRuntimeConfig(undefined)
-  return loadLocalModel(name, runtimeConfig, callOptions)
+  return loadLocalModel(name, runtimeConfig, callOptions) as Promise<LocalModelResolvedModelForName<TName>>
 }

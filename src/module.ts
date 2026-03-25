@@ -1,5 +1,5 @@
 import type {} from "./runtime/nuxt"
-import { defineNuxtModule, addImports, addPlugin, createResolver } from "@nuxt/kit"
+import { defineNuxtModule, addImports, addPlugin, addTypeTemplate, createResolver } from "@nuxt/kit"
 import { existsSync } from "node:fs"
 import type { NuxtModule } from "@nuxt/schema"
 import type { LocalModelRuntimeConfig } from "./runtime/types"
@@ -10,6 +10,25 @@ type LocalModelPublicRuntimeConfig = LocalModelRuntimeConfig & {
 }
 
 export type NuxtLlmModuleOptions = LocalModelRuntimeConfig
+
+function renderLocalModelRegistry(options: LocalModelRuntimeConfig) {
+  const defaultTask = options.defaultTask || "feature-extraction"
+  const entries = Object.entries(options.models || {})
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([alias, definition]) => {
+      const task = definition?.task || defaultTask
+      return `    ${JSON.stringify(alias)}: ${JSON.stringify(task)}`
+    })
+
+  const body = entries.length > 0 ? `\n${entries.join("\n")}\n` : "\n"
+
+  return `declare global {
+  interface NuxtLocalModelRegistry {${body}  }
+}
+
+export {}
+`
+}
 
 const module: NuxtModule<NuxtLlmModuleOptions, NuxtLlmModuleOptions, false> = defineNuxtModule<NuxtLlmModuleOptions>({
   meta: {
@@ -32,6 +51,13 @@ const module: NuxtModule<NuxtLlmModuleOptions, NuxtLlmModuleOptions, false> = de
     const serverWorkerJs = resolve("./runtime/server/worker.js")
     const serverWorkerTs = resolve("./runtime/server/worker.ts")
     const serverWorkerEntry = existsSync(serverWorkerJs) ? serverWorkerJs : serverWorkerTs
+
+    if (options.browserWorker) {
+      nuxt.options.vite ||= {}
+      nuxt.options.vite.worker ||= {}
+      nuxt.options.vite.worker.format ||= "es"
+    }
+
     setLocalModelRuntimeConfig({
       ...options,
       serverWorkerEntry,
@@ -61,6 +87,11 @@ const module: NuxtModule<NuxtLlmModuleOptions, NuxtLlmModuleOptions, false> = de
     addImports({
       name: "prewarmLocalModel",
       from: resolve("./runtime/composables/useLocalModel"),
+    })
+
+    addTypeTemplate({
+      filename: "types/nuxt-local-model-configured.d.ts",
+      getContents: () => renderLocalModelRegistry(options),
     })
 
     addPlugin({

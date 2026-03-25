@@ -152,6 +152,7 @@ describe("browser worker local model", () => {
     const result = await model("hello world")
 
     expect(FakeWorker.instances).toHaveLength(1)
+    expect(FakeWorker.instances[0].url.pathname.endsWith("/model.worker")).toBe(true)
     expect(FakeWorker.instances[0].messages.filter((message) => (message as { type: string }).type === "init")).toHaveLength(1)
     expect(FakeWorker.instances[0].messages.filter((message) => (message as { type: string }).type === "run")).toHaveLength(1)
     expect(result).toEqual(["hello world", { normalize: true, pooling: "mean" }])

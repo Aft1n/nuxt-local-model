@@ -96,11 +96,9 @@ export default defineEventHandler(async () => {
 ### Defining Models in `nuxt.config.ts`
 
 ```ts
-import { defineLocalModelConfig } from "nuxt-local-model"
-
 export default defineNuxtConfig({
   modules: ["nuxt-local-model"],
-  localModel: defineLocalModelConfig({
+  localModel: {
     runtime: "auto", // auto-detect Node, Bun, or Deno on the server
     cacheDir: "./.ai-models", // one cache folder for downloads and reuse
     allowRemoteModels: true, // allow fetching missing models from Hugging Face
@@ -118,12 +116,14 @@ export default defineNuxtConfig({
         },
       },
     },
-  }),
+  },
 })
 ```
 
-Tip: `defineLocalModelConfig()` keeps your alias keys as literal types, so you can reuse them
-with `LocalModelAliases<typeof localModel>` if you want exact autocomplete elsewhere in your app.
+Tip: a plain `localModel: { ... }` object is enough for Nuxt config IntelliSense, and configured
+model aliases now flow into `useLocalModel("...")` / `getLocalModel("...")` suggestions automatically.
+If you want to reuse the config as a separate constant elsewhere, `as const satisfies LocalModelRuntimeConfig`
+is the most Nuxt-native way to preserve literal alias keys without a helper.
 If you are writing server routes, import `getLocalModel()` from `nuxt-local-model/server`.
 In Vue app code, `useLocalModel()` is auto-imported once the module is installed.
 
@@ -156,11 +156,9 @@ onMounted(() => {
 ### Automatic Browser Prewarm
 
 ```ts
-import { defineLocalModelConfig } from "nuxt-local-model"
-
 export default defineNuxtConfig({
   modules: ["nuxt-local-model"],
-  localModel: defineLocalModelConfig({
+  localModel: {
     browserWorker: true,
     browserPrewarm: ["embedding"],
     models: {
@@ -169,7 +167,7 @@ export default defineNuxtConfig({
         model: "Xenova/all-MiniLM-L6-v2",
       },
     },
-  }),
+  },
 })
 ```
 
@@ -180,11 +178,9 @@ Set `browserPrewarm: true` to warm every configured alias on app mount, or pass 
 You can configure the module in your `nuxt.config.ts`:
 
 ```ts
-import { defineLocalModelConfig } from "nuxt-local-model"
-
 export default defineNuxtConfig({
   modules: ["nuxt-local-model"],
-  localModel: defineLocalModelConfig({
+  localModel: {
     runtime: "auto", // or "node", "bun", or "deno"
     cacheDir: "./.ai-models", // persistent cache folder for downloaded model assets
     allowRemoteModels: true, // download from Hugging Face if not yet cached
@@ -202,7 +198,7 @@ export default defineNuxtConfig({
         },
       },
     },
-  }),
+  },
 })
 ```
 

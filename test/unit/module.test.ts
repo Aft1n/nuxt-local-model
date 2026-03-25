@@ -3,6 +3,7 @@ import module from "../../src/module"
 import type { LocalModelRuntimeConfig } from "../../src/runtime/types"
 
 const {
+  addTypeTemplate,
   addImports,
   addPlugin,
   createResolver,
@@ -10,6 +11,7 @@ const {
   loadLocalModel,
   existsSync,
 } = vi.hoisted(() => ({
+  addTypeTemplate: vi.fn(),
   addImports: vi.fn(),
   addPlugin: vi.fn(),
   createResolver: vi.fn(() => ({
@@ -22,6 +24,7 @@ const {
 
 vi.mock("@nuxt/kit", () => ({
   defineNuxtModule: <T>(config: T) => config,
+  addTypeTemplate,
   addImports,
   addPlugin,
   createResolver,
@@ -47,6 +50,11 @@ type TestedModule = {
         runtimeConfig: {
           public: Record<string, unknown>
         }
+        vite?: {
+          worker?: {
+            format?: string
+          }
+        }
       }
       hook: (name: string, callback: () => Promise<void>) => void
     },
@@ -67,7 +75,7 @@ describe("module metadata", () => {
   it("registers imports, plugins, runtime config, and startup warmup", async () => {
     let readyHook: (() => Promise<void>) | undefined
     type SetupNuxt = Parameters<typeof testedModule.setup>[1]
-    const nuxt = {
+    const nuxt: SetupNuxt = {
       options: {
         runtimeConfig: {
           public: {},
@@ -78,7 +86,7 @@ describe("module metadata", () => {
           readyHook = callback
         }
       }),
-    } satisfies SetupNuxt
+    }
 
     const options = {
       runtime: "deno" as const,
@@ -87,7 +95,7 @@ describe("module metadata", () => {
       allowLocalModels: true,
       defaultTask: "feature-extraction" as const,
       serverWorker: true,
-      browserWorker: false,
+      browserWorker: true,
       browserPrewarm: ["embedding"],
       models: {
         embedding: {
@@ -114,6 +122,9 @@ describe("module metadata", () => {
       name: "prewarmLocalModel",
       from: "/resolved./runtime/composables/useLocalModel",
     })
+    expect(addTypeTemplate).toHaveBeenCalledWith(expect.objectContaining({
+      filename: "types/nuxt-local-model-configured.d.ts",
+    }))
     expect(addPlugin).toHaveBeenNthCalledWith(1, {
       src: "/resolved./runtime/plugins/hf-transformers.server",
     })
@@ -130,6 +141,8 @@ describe("module metadata", () => {
       models: options.models,
       serverWorkerEntry: "/resolved./runtime/server/worker.js",
     })
+    expect(nuxt.options.vite?.worker?.format).toBe("es")
+    expect(addTypeTemplate.mock.calls[0]?.[0]?.getContents()).toContain("\"embedding\": \"feature-extraction\"")
 
     expect(readyHook).toBeTypeOf("function")
     await readyHook?.()

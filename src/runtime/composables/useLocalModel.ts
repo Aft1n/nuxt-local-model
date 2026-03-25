@@ -1,9 +1,16 @@
 import { useRuntimeConfig } from "nuxt/app"
-import type { LocalModelPipeline, LocalModelRunner, LocalModelPipelineOptions } from "../types"
+import type {
+  LocalModelCallOptionsForName,
+  LocalModelName,
+  LocalModelPipeline,
+  LocalModelResolvedModelForName,
+  LocalModelRunner,
+} from "../types"
 import { type InternalLocalModelRuntimeConfig, resolveModelDefinition, resolveRuntimeConfig } from "../utils"
 
 const workerCache = new Map<string, Promise<LocalModelRunner>>()
 const BROWSER_WORKER_INIT_TIMEOUT_MS = 45000
+const BROWSER_WORKER_ENTRY = "../worker/model.worker"
 
 function formatWorkerError(error: unknown) {
   if (error instanceof Error) return error.message
@@ -30,7 +37,10 @@ function formatWorkerError(error: unknown) {
   return String(error)
 }
 
-export async function useLocalModel(name: string, callOptions: LocalModelPipelineOptions = {}) {
+export async function useLocalModel<TName extends LocalModelName>(
+  name: TName,
+  callOptions: LocalModelCallOptionsForName<TName> = {} as LocalModelCallOptionsForName<TName>,
+) {
   const publicRuntimeConfig = useRuntimeConfig().public as { localModel?: InternalLocalModelRuntimeConfig }
   const runtimeConfig = resolveRuntimeConfig(publicRuntimeConfig.localModel)
   const cacheDir = runtimeConfig.cacheDir
@@ -69,20 +79,23 @@ export async function useLocalModel(name: string, callOptions: LocalModelPipelin
         {
           dispose: runner.dispose ? async () => runner.dispose?.() : undefined,
         },
-      ) as LocalModelRunner,
+      ) as LocalModelResolvedModelForName<TName>,
     )
   }
 
   if (process.server) {
     const { getLocalModel } = await import("../shared/local-model")
-    return getLocalModel(name, callOptions) as Promise<LocalModelPipeline | LocalModelRunner>
+    return getLocalModel(name, callOptions) as Promise<LocalModelResolvedModelForName<TName>>
   }
 
   const { loadLocalModel } = await import("../shared/local-model")
-  return loadLocalModel(name, runtimeConfig, callOptions)
+  return loadLocalModel(name, runtimeConfig, callOptions) as Promise<LocalModelResolvedModelForName<TName>>
 }
 
-export async function prewarmLocalModel(name: string, callOptions: LocalModelPipelineOptions = {}) {
+export async function prewarmLocalModel<TName extends LocalModelName>(
+  name: TName,
+  callOptions: LocalModelCallOptionsForName<TName> = {} as LocalModelCallOptionsForName<TName>,
+) {
   return useLocalModel(name, callOptions)
 }
 
@@ -95,7 +108,9 @@ function createBrowserWorkerRunner(
   runtimeConfig: ReturnType<typeof resolveRuntimeConfig>,
 ): Promise<LocalModelRunner> {
   return new Promise((resolve, reject) => {
-    const worker = new Worker(new URL("../worker/model.worker.ts", import.meta.url), { type: "module" })
+    // Keep this extensionless so source-mode consumers resolve the `.ts` worker
+    // while the published package resolves the compiled `.js` worker.
+    const worker = new Worker(new URL(BROWSER_WORKER_ENTRY, import.meta.url), { type: "module" })
     const pendingRuns = new Map<
       string,
       {

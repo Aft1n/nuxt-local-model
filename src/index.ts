@@ -4,7 +4,12 @@ export { getLocalModel, isLocalModelRuntimeConfig } from "./runtime/shared/local
 export type {
   LocalModelDefinition,
   LocalModelAliases,
+  LocalModelCallOptionsForName,
   LocalModelConfig,
+  LocalModelKnownTask,
+  LocalModelName,
+  LocalModelResolvedModel,
+  LocalModelResolvedModelForName,
   LocalModelPipeline,
   LocalModelPipelineLoadOptions,
   LocalModelPipelineOptions,
@@ -15,4 +20,5 @@ export type {
   LocalModelRuntimeConfig,
   LocalModelSupportedRuntime,
   LocalModelTask,
+  LocalModelTaskForName,
 } from "./runtime/types"
