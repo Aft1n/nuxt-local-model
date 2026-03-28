@@ -10,7 +10,9 @@ import { type InternalLocalModelRuntimeConfig, resolveModelDefinition, resolveRu
 
 const workerCache = new Map<string, Promise<LocalModelRunner>>()
 const BROWSER_WORKER_INIT_TIMEOUT_MS = 45000
-const BROWSER_WORKER_ENTRY = "../worker/model.worker"
+// Use the concrete built worker filename so consuming apps emit the worker asset
+// correctly when this module is imported from its published dist output.
+const BROWSER_WORKER_ENTRY = "../worker/model.worker.js"
 
 function formatWorkerError(error: unknown) {
   if (error instanceof Error) return error.message
