@@ -1,6 +1,18 @@
 # Changelog
 
 
+## v0.1.10
+
+[compare changes](https://github.com/Aft1n/nuxt-local-model/compare/v0.1.9...v0.1.10)
+
+### 🏡 Chore
+
+- **release:** V0.1.9 ([48f0da7](https://github.com/Aft1n/nuxt-local-model/commit/48f0da7))
+
+### ❤️ Contributors
+
+- Aft1n <aftinhb@gmail.com>
+
 ## v0.1.9
 
 [compare changes](https://github.com/Aft1n/nuxt-local-model/compare/v0.1.9...v0.1.9)
