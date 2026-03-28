@@ -18,6 +18,7 @@ export interface ResolvedLocalModelRuntimeConfig extends Omit<InternalLocalModel
   cacheDir: string
   allowRemoteModels: boolean
   allowLocalModels: boolean
+  serverPrewarm: boolean | string[]
   browserPrewarm: boolean | string[]
 }
 
@@ -74,6 +75,7 @@ export function resolveRuntimeConfig(config?: InternalLocalModelRuntimeConfig): 
     allowLocalModels: config?.allowLocalModels ?? true,
     cacheDir: resolveCacheDir(config?.cacheDir),
     defaultTask: config?.defaultTask ?? "feature-extraction",
+    serverPrewarm: config?.serverPrewarm ?? false,
     serverWorker: config?.serverWorker ?? false,
     serverWorkerEntry: config?.serverWorkerEntry,
     browserWorker: config?.browserWorker ?? false,

@@ -11,6 +11,12 @@ type LocalModelPublicRuntimeConfig = LocalModelRuntimeConfig & {
 
 export type NuxtLlmModuleOptions = LocalModelRuntimeConfig
 
+function resolvePrewarmTargets(prewarm: boolean | string[], models: Record<string, unknown>) {
+  if (prewarm === true) return Object.keys(models)
+  if (Array.isArray(prewarm)) return prewarm
+  return []
+}
+
 function renderLocalModelRegistry(options: LocalModelRuntimeConfig) {
   const defaultTask = options.defaultTask || "feature-extraction"
   const entries = Object.entries(options.models || {})
@@ -41,6 +47,7 @@ const module: NuxtModule<NuxtLlmModuleOptions, NuxtLlmModuleOptions, false> = de
     allowRemoteModels: true,
     allowLocalModels: true,
     defaultTask: "feature-extraction",
+    serverPrewarm: false,
     serverWorker: false,
     browserWorker: false,
     browserPrewarm: false,
@@ -72,6 +79,7 @@ const module: NuxtModule<NuxtLlmModuleOptions, NuxtLlmModuleOptions, false> = de
       allowLocalModels: options.allowLocalModels,
       runtime: options.runtime,
       defaultTask: options.defaultTask,
+      serverPrewarm: options.serverPrewarm,
       serverWorker: options.serverWorker,
       serverWorkerEntry,
       browserWorker: options.browserWorker,
@@ -104,7 +112,8 @@ const module: NuxtModule<NuxtLlmModuleOptions, NuxtLlmModuleOptions, false> = de
     })
 
     nuxt.hook("ready", async () => {
-      const modelNames = Object.keys(options.models || {})
+      const modelNames = resolvePrewarmTargets(options.serverPrewarm ?? false, options.models || {})
+        .filter(name => name in (options.models || {}))
       if (modelNames.length === 0) return
       const { loadLocalModel } = await import("./runtime/shared/local-model")
       const results = await Promise.allSettled(modelNames.map((name) => loadLocalModel(name, options)))

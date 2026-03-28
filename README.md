@@ -22,6 +22,7 @@ A Nuxt module for easily integrating local Hugging Face transformer models into 
 - Auto-imported composable, `useLocalModel()` by default for frontend Vue code
 - Auto-imported `prewarmLocalModel()` helper for eager browser model loading
 - Server-safe helper, `getLocalModel()` for `server/api` and utilities
+- Explicit `serverPrewarm` and `browserPrewarm` controls instead of implicit startup warmup
 - Fully configurable via `nuxt.config.ts`
 - Supports changing model names, tasks, and settings per usage
 - Optional worker-backed execution on the server or in the browser
@@ -72,6 +73,9 @@ For server routes and utilities, use `getLocalModel()`.
 If you want a browser model to start loading before a user interacts with the UI, use
 `prewarmLocalModel()` or enable `browserPrewarm` in `nuxt.config.ts`.
 
+If you want models to warm on the server during Nuxt startup, enable `serverPrewarm`
+explicitly. Server routes using `getLocalModel()` do not automatically imply startup warmup.
+
 ### Basic Example
 
 ```vue
@@ -104,9 +108,10 @@ export default defineNuxtConfig({
     allowRemoteModels: true, // allow fetching missing models from Hugging Face
     allowLocalModels: true, // allow reusing cached / mounted model files
     defaultTask: "feature-extraction", // default pipeline type when a model entry does not override it
+    serverPrewarm: false, // false disables startup warmup, true warms all aliases on server startup, or pass ["embedding"] for specific aliases
     serverWorker: false, // run inference in a server worker thread on Node, Bun, or Deno
     browserWorker: false, // run inference in a browser Web Worker; avoid this for very large models
-    browserPrewarm: false, // false disables client prewarm, true warms all aliases, or pass ["embedding"] to warm specific aliases
+    browserPrewarm: false, // false disables browser prewarm, true warms all aliases after app mount, or pass ["embedding"] to warm specific aliases
     models: {
       embedding: {
         task: "feature-extraction", // the pipeline type for this alias
@@ -173,6 +178,31 @@ export default defineNuxtConfig({
 
 Set `browserPrewarm: true` to warm every configured alias on app mount, or pass a string array to warm only selected aliases.
 
+### Explicit Server Prewarm
+
+```ts
+export default defineNuxtConfig({
+  modules: ["nuxt-local-model"],
+  localModel: {
+    serverPrewarm: ["embedding"],
+    models: {
+      embedding: {
+        task: "feature-extraction",
+        model: "Xenova/all-MiniLM-L6-v2",
+      },
+    },
+  },
+})
+```
+
+Set `serverPrewarm: true` to warm every configured alias during Nuxt startup, or pass a string array to warm only selected aliases.
+
+This is separate from browser prewarm:
+
+- `serverPrewarm` runs during Nuxt startup on the server
+- `browserPrewarm` runs after `app:mounted` in the browser
+- calling `getLocalModel()` inside a server route stays on-demand and does not automatically prewarm at startup
+
 ## Configuration Options
 
 You can configure the module in your `nuxt.config.ts`:
@@ -186,9 +216,10 @@ export default defineNuxtConfig({
     allowRemoteModels: true, // download from Hugging Face if not yet cached
     allowLocalModels: true, // reuse local cache or mounted volume contents
     defaultTask: "feature-extraction", // default for aliases that do not override task
+    serverPrewarm: false, // eager server-side prewarm: false, true, or a list of aliases
     serverWorker: true, // use a server worker thread so inference does not block the main server thread
     browserWorker: false, // enable only if you intentionally want browser-side inference
-    browserPrewarm: false, // eager client-side prewarm: false, true, or a list of aliases
+    browserPrewarm: false, // eager browser-side prewarm: false, true, or a list of aliases
     models: {
       embedding: {
         task: "feature-extraction", // embeddings usually use feature-extraction
@@ -203,6 +234,20 @@ export default defineNuxtConfig({
 ```
 
 If `onnxruntime-node` is not available in your server runtime, the module now falls back to the default Transformers.js backend instead of crashing during startup.
+
+## Warmup Behavior
+
+The module now separates on-demand model usage from startup warmup:
+
+- `useLocalModel()` loads a model in browser code when you call it
+- `getLocalModel()` loads a model on the server when you call it
+- `serverPrewarm` is the only thing that triggers eager server startup warmup
+- `browserPrewarm` is the only thing that triggers eager browser warmup
+
+This makes static sites and mixed environments much easier to reason about. For example:
+
+- a static docs site can use `browserPrewarm: ["embedding"]` without warming models during server startup
+- an API service can use `serverPrewarm: true` if it wants lower-latency first requests
 
 ### Cache Directory
 

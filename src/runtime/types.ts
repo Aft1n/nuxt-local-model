@@ -92,6 +92,7 @@ export interface LocalModelRuntimeConfig<TModels extends LocalModelModelRegistry
   allowRemoteModels?: boolean
   allowLocalModels?: boolean
   defaultTask?: LocalModelTask
+  serverPrewarm?: LocalModelPrewarmTargets
   serverWorker?: boolean
   browserWorker?: boolean
   browserPrewarm?: LocalModelPrewarmTargets

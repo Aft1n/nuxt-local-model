@@ -72,7 +72,7 @@ describe("module metadata", () => {
     expect(testedModule.meta.configKey).toBe("localModel")
   })
 
-  it("registers imports, plugins, runtime config, and startup warmup", async () => {
+  it("registers imports, plugins, runtime config, and explicit startup warmup", async () => {
     let readyHook: (() => Promise<void>) | undefined
     type SetupNuxt = Parameters<typeof testedModule.setup>[1]
     const nuxt: SetupNuxt = {
@@ -94,6 +94,7 @@ describe("module metadata", () => {
       allowRemoteModels: true,
       allowLocalModels: true,
       defaultTask: "feature-extraction" as const,
+      serverPrewarm: ["embedding"],
       serverWorker: true,
       browserWorker: true,
       browserPrewarm: ["embedding"],
@@ -136,6 +137,7 @@ describe("module metadata", () => {
     expect((nuxt.options.runtimeConfig.public as { localModel?: unknown }).localModel).toMatchObject({
       runtime: "deno",
       cacheDir: "./cache",
+      serverPrewarm: ["embedding"],
       serverWorker: true,
       browserPrewarm: ["embedding"],
       models: options.models,
@@ -147,5 +149,37 @@ describe("module metadata", () => {
     expect(readyHook).toBeTypeOf("function")
     await readyHook?.()
     expect(loadLocalModel).toHaveBeenCalledWith("embedding", options)
+  })
+
+  it("does not warm models during startup unless serverPrewarm is configured", async () => {
+    let readyHook: (() => Promise<void>) | undefined
+    type SetupNuxt = Parameters<typeof testedModule.setup>[1]
+    const nuxt: SetupNuxt = {
+      options: {
+        runtimeConfig: {
+          public: {},
+        },
+      },
+      hook: vi.fn((name: string, callback: () => Promise<void>) => {
+        if (name === "ready") {
+          readyHook = callback
+        }
+      }),
+    }
+
+    const options = {
+      models: {
+        embedding: {
+          task: "feature-extraction" as const,
+          model: "Xenova/all-MiniLM-L6-v2",
+        },
+      },
+    }
+
+    testedModule.setup(options, nuxt)
+
+    expect(readyHook).toBeTypeOf("function")
+    await readyHook?.()
+    expect(loadLocalModel).not.toHaveBeenCalled()
   })
 })
