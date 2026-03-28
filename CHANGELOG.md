@@ -1,6 +1,18 @@
 # Changelog
 
 
+## v0.1.9
+
+[compare changes](https://github.com/Aft1n/nuxt-local-model/compare/v0.1.8...v0.1.9)
+
+### 🚀 Enhancements
+
+- Infer local model aliases from Nuxt config and fix worker packaging ([7e988be](https://github.com/Aft1n/nuxt-local-model/commit/7e988be))
+
+### ❤️ Contributors
+
+- Aft1n <aftinhb@gmail.com>
+
 ## v0.1.8
 
 [compare changes](https://github.com/Aft1n/nuxt-local-model/compare/v0.1.6...v0.1.8)
