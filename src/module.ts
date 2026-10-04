@@ -1,6 +1,8 @@
 import type {} from "./runtime/nuxt"
 import { defineNuxtModule, addImports, addPlugin, addTypeTemplate, createResolver } from "@nuxt/kit"
 import { existsSync } from "node:fs"
+// `@nuxt/schema` must be a direct dependency: pnpm's isolated node_modules does
+// not expose transitive packages to the root project.
 import type { NuxtModule } from "@nuxt/schema"
 import type { LocalModelRuntimeConfig } from "./runtime/types"
 import { setLocalModelRuntimeConfig } from "./runtime/shared/local-model"

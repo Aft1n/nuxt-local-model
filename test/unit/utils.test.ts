@@ -24,19 +24,22 @@ describe("local model utils", () => {
   })
 
   it("detects the active runtime in auto mode", () => {
-    const denoGlobal = globalThis as typeof globalThis & {
+    // Feature-detect the alternate runtimes without depending on their type
+    // packages: `@types/bun` would leak Bun globals into every test, and Deno
+    // ships no types at all. Both guards are `typeof`-checked at runtime.
+    const runtimeGlobals = globalThis as typeof globalThis & {
+      Bun?: unknown
       Deno?: {
         version?: {
           deno?: string
         }
       }
     }
-    const expectedRuntime = typeof Bun !== "undefined"
+    const expectedRuntime = typeof runtimeGlobals.Bun !== "undefined"
       ? "bun"
-      : typeof denoGlobal.Deno?.version?.deno === "string"
+      : typeof runtimeGlobals.Deno?.version?.deno === "string"
         ? "deno"
         : "node"
-
     expect(detectLocalModelRuntime()).toBe(expectedRuntime)
   })
 
