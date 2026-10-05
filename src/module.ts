@@ -5,6 +5,7 @@ import { existsSync } from "node:fs"
 // not expose transitive packages to the root project.
 import type { NuxtModule } from "@nuxt/schema"
 import type { LocalModelRuntimeConfig } from "./runtime/types"
+import type { InternalLocalModelRuntimeConfig } from "./runtime/utils"
 import { setLocalModelRuntimeConfig } from "./runtime/shared/local-model"
 
 type LocalModelPublicRuntimeConfig = LocalModelRuntimeConfig & {
@@ -141,11 +142,16 @@ const module: NuxtModule<NuxtLlmModuleOptions, NuxtLlmModuleOptions, false> = de
     })
 
     // Private copy: Nitro plugins and server routes need the unredacted
-    // definitions, which never reach clients.
-    nuxt.options.runtimeConfig.localModel = {
+    // definitions, which never reach clients. Assigned through the module's
+    // own contract: the generated schema narrows `localModel` to the exact
+    // playground snapshot, but setup must accept any user config.
+    const privateRuntimeConfig = nuxt.options.runtimeConfig as unknown as {
+      localModel?: InternalLocalModelRuntimeConfig
+    }
+    privateRuntimeConfig.localModel = {
       ...options,
-      decisionModels,
-      serverWorkerEntry,
+      decisionModels: decisionModels ?? {},
+      serverWorkerEntry: serverWorkerEntry ?? "",
     }
 
     const publicRuntimeConfig = nuxt.options.runtimeConfig.public as Record<string, unknown> & {

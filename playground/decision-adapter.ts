@@ -55,14 +55,20 @@ export function createPlaygroundDecisionAdapter(
         if (question.type === "choice") {
           const options = Object.keys(question.criteria)
           const probabilities = normalize(options.map(option => unitValue(`${seed}::${option}`) + 0.001))
-          const winner = options.reduce((best, option, index) =>
-            probabilities[index] > probabilities[options.indexOf(best)] ? option : best,
-          )
+          let winner = options[0] ?? ""
+          let winnerProb = probabilities[0] ?? 0
+          for (let index = 1; index < options.length; index += 1) {
+            const prob = probabilities[index] ?? 0
+            if (prob > winnerProb) {
+              winner = options[index] ?? winner
+              winnerProb = prob
+            }
+          }
           const answer: DecisionAnswer = {
             type: "choice",
             choice: winner,
-            probabilities: Object.fromEntries(options.map((option, index) => [option, probabilities[index]])),
-            confidence: probabilities[options.indexOf(winner)],
+            probabilities: Object.fromEntries(options.map((option, index) => [option, probabilities[index] ?? 0])),
+            confidence: winnerProb,
           }
           answers[id] = answer
           continue
@@ -75,7 +81,7 @@ export function createPlaygroundDecisionAdapter(
           const answer: DecisionAnswer = {
             type: "score",
             score,
-            probabilities: Object.fromEntries(levels.map((_, index) => [String(index), probabilities[index]])),
+            probabilities: Object.fromEntries(levels.map((_, index) => [String(index), probabilities[index] ?? 0])),
             confidence: Math.max(...probabilities),
             legend: Object.fromEntries(levels.map((level, index) => [String(index), level])),
           }

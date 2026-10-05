@@ -109,7 +109,7 @@ function declaredCount(question: DecisionQuestion): number {
 function argmax(values: number[]) {
   let best = 0
   for (let i = 1; i < values.length; i += 1) {
-    if (values[i] > values[best]) best = i
+    if ((values[i] ?? -Infinity) > (values[best] ?? -Infinity)) best = i
   }
   return best
 }
