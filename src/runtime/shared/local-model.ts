@@ -74,7 +74,12 @@ async function resolveServerWorkerEntry() {
   const baseDir = pathMod.dirname(urlMod.fileURLToPath(import.meta.url))
   const jsEntry = pathMod.resolve(baseDir, "../server/worker.js")
   if (existsSync(jsEntry)) return jsEntry
-  return pathMod.resolve(baseDir, "../server/worker.ts")
+
+  // A `node:worker_threads` worker cannot execute TypeScript source, so this is
+  // a genuine misconfiguration rather than something to silently work around.
+  throw new Error(
+    "Server worker entry not found. Run the module build (`nuxt-module-build build`) so `dist/runtime/server/worker.js` exists, or disable `serverWorker`.",
+  )
 }
 
 async function canUseServerWorkerRuntime(config: ResolvedLocalModelRuntimeConfig) {

@@ -1,4 +1,6 @@
 import type {
+  DecisionModelRegistry,
+  DecisionModelLoadOptions,
   LocalModelDefinition,
   LocalModelModelRegistry,
   LocalModelPipelineLoadOptions,
@@ -12,9 +14,10 @@ export interface InternalLocalModelRuntimeConfig extends LocalModelRuntimeConfig
   serverWorkerEntry?: string
 }
 
-export interface ResolvedLocalModelRuntimeConfig extends Omit<InternalLocalModelRuntimeConfig, "runtime" | "models"> {
+export interface ResolvedLocalModelRuntimeConfig extends Omit<InternalLocalModelRuntimeConfig, "runtime" | "models" | "decisionModels"> {
   runtime: LocalModelSupportedRuntime
   models: LocalModelModelRegistry
+  decisionModels: DecisionModelRegistry
   cacheDir: string
   allowRemoteModels: boolean
   allowLocalModels: boolean
@@ -81,6 +84,7 @@ export function resolveRuntimeConfig(config?: InternalLocalModelRuntimeConfig): 
     browserWorker: config?.browserWorker ?? false,
     browserPrewarm: config?.browserPrewarm ?? false,
     models: config?.models ?? {},
+    decisionModels: config?.decisionModels ?? {},
   }
 }
 
@@ -117,5 +121,27 @@ export function resolveModelDefinition(
       ...(registryEntry?.options || {}),
       ...loadOptions,
     },
+  }
+}
+
+export function resolveDecisionModelDefinition(
+  name: string,
+  runtimeConfig: InternalLocalModelRuntimeConfig | undefined,
+  overrides?: Partial<DecisionModelLoadOptions>,
+): DecisionModelLoadOptions {
+  const registryEntry = runtimeConfig?.decisionModels?.[name]
+
+  if (!registryEntry) {
+    throw new Error(`Decision model "${name}" is not defined in nuxt.config.`)
+  }
+
+  if (!registryEntry.source || typeof registryEntry.source !== "string" || !registryEntry.source.trim()) {
+    throw new Error(`Decision model "${name}" must declare a non-empty "source" in nuxt.config.`)
+  }
+
+  return {
+    ...registryEntry,
+    ...overrides,
+    source: overrides?.source || registryEntry.source,
   }
 }

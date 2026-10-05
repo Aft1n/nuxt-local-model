@@ -6,7 +6,9 @@ const {
   addTypeTemplate,
   addImports,
   addPlugin,
+  addServerPlugin,
   createResolver,
+  resolvePath,
   setLocalModelRuntimeConfig,
   loadLocalModel,
   existsSync,
@@ -14,9 +16,11 @@ const {
   addTypeTemplate: vi.fn(),
   addImports: vi.fn(),
   addPlugin: vi.fn(),
+  addServerPlugin: vi.fn(),
   createResolver: vi.fn(() => ({
     resolve: (path: string) => `/resolved${path}`,
   })),
+  resolvePath: vi.fn(async (path: string) => `/resolved${path}`),
   setLocalModelRuntimeConfig: vi.fn(),
   loadLocalModel: vi.fn(),
   existsSync: vi.fn((path: string) => path.endsWith("worker.js")),
@@ -26,8 +30,10 @@ vi.mock("@nuxt/kit", () => ({
   defineNuxtModule: <T>(config: T) => config,
   addTypeTemplate,
   addImports,
+  addServerPlugin,
   addPlugin,
   createResolver,
+  resolvePath,
 }))
 
 vi.mock("node:fs", () => ({
@@ -104,20 +110,36 @@ describe("module metadata", () => {
           model: "Xenova/all-MiniLM-L6-v2",
         },
       },
+      decisionModels: {
+        triage: {
+          source: "./models/triage",
+          outputMap: { logits: "refund" },
+          adapter: "~/decision-adapter",
+        },
+      },
     }
 
-    testedModule.setup(options, nuxt)
+    await testedModule.setup(options, nuxt)
 
     expect(setLocalModelRuntimeConfig).toHaveBeenCalledWith(
       expect.objectContaining({
         runtime: "deno",
         serverWorkerEntry: "/resolved./runtime/server/worker.js",
+        decisionModels: {
+          triage: expect.objectContaining({
+            adapter: "/resolved~/decision-adapter",
+          }),
+        },
       }),
     )
 
     expect(addImports).toHaveBeenCalledWith({
       name: "useLocalModel",
       from: "/resolved./runtime/composables/useLocalModel",
+    })
+    expect(addImports).toHaveBeenCalledWith({
+      name: "useDecisionModel",
+      from: "/resolved./runtime/composables/useDecisionModel",
     })
     expect(addImports).toHaveBeenCalledWith({
       name: "prewarmLocalModel",
@@ -141,14 +163,48 @@ describe("module metadata", () => {
       serverWorker: true,
       browserPrewarm: ["embedding"],
       models: options.models,
-      serverWorkerEntry: "/resolved./runtime/server/worker.js",
+      decisionModels: {
+        triage: {
+          source: "./models/triage",
+          outputMap: { logits: "refund" },
+          // `adapter` is redacted from runtimeConfig.public so the resolved
+          // build-machine path is never serialized to clients.
+        },
+      },
     })
+    // `serverWorkerEntry` is a server-only absolute path and must never reach
+    // the client payload.
+    expect((nuxt.options.runtimeConfig.public as { localModel?: Record<string, unknown> }).localModel)
+      .not.toHaveProperty("serverWorkerEntry")
     expect(nuxt.options.vite?.worker?.format).toBe("es")
     expect(addTypeTemplate.mock.calls[0]?.[0]?.getContents()).toContain("\"embedding\": \"feature-extraction\"")
 
     expect(readyHook).toBeTypeOf("function")
     await readyHook?.()
     expect(loadLocalModel).toHaveBeenCalledWith("embedding", options)
+  })
+  it("publishes the bundled shared-prefix preset to the browser, stripping only path adapters", async () => {
+    type SetupNuxt = Parameters<typeof testedModule.setup>[1]
+    const fresh: SetupNuxt = {
+      options: {
+        runtimeConfig: {
+          public: {},
+        },
+      },
+      hook: vi.fn(),
+    }
+    await testedModule.setup(
+      {
+        decisionModels: {
+          shared: { source: "my-org/my-decision-model", adapter: "shared-prefix" },
+          custom: { source: "./models/x", adapter: "~/my-adapter" },
+        },
+      } as unknown as LocalModelRuntimeConfig,
+      fresh,
+    )
+    const publicModels = (fresh.options.runtimeConfig.public as { localModel: { decisionModels: Record<string, { adapter?: string }> } }).localModel.decisionModels
+    expect(publicModels.shared?.adapter).toBe("shared-prefix")
+    expect(publicModels.custom).not.toHaveProperty("adapter")
   })
 
   it("does not warm models during startup unless serverPrewarm is configured", async () => {
@@ -176,7 +232,7 @@ describe("module metadata", () => {
       },
     }
 
-    testedModule.setup(options, nuxt)
+    await testedModule.setup(options, nuxt)
 
     expect(readyHook).toBeTypeOf("function")
     await readyHook?.()

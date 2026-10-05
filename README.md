@@ -342,10 +342,228 @@ In other words:
 
 ### Naming Rule
 
-- `useLocalModel()` is for frontend Vue components, pages, and composables
-- `getLocalModel()` is for `server/api` routes and Nitro utilities
+- `useLocalModel()` / `useDecisionModel()` are for frontend Vue components, pages, and composables
+- `getLocalModel()` / `getDecisionModel()` are for `server/api` routes and Nitro utilities
 
 Both use the same underlying model-loading logic, so the runtime behavior stays consistent.
+
+### Decision Models
+
+Decision models answer **bounded questions with probabilities** instead of
+generating text. They use three primitives:
+
+| Primitive | Question                              | Returns                                             |
+| --------- | ------------------------------------- | --------------------------------------------------- |
+| `noul`    | Is this true?                         | `noul` (0..1)                                       |
+| `choice`  | Which of these options?               | `choice`, `probabilities`, `confidence`             |
+| `score`   | Where does this sit on these levels?  | `score`, `probabilities`, `confidence`, `legend`    |
+
+Register one in `nuxt.config.ts` under `decisionModels`. `source` accepts a
+local directory (or `.onnx` file), a full `https://` URL, or a Hugging Face id:
+
+```ts
+export default defineNuxtConfig({
+  modules: ["nuxt-local-model"],
+  localModel: {
+    decisionModels: {
+      triage: {
+        // Local directory holding your ONNX model files.
+        source: "./models/triage",
+
+        // Optional. Defaults to the bundled ONNX Runtime adapter.
+        adapter: "~/decision-adapter",
+      },
+      sharedPrefix: {
+        // Any of these works — no manual download needed:
+        // source: "my-org/my-decision-model",
+        // source: "my-org/my-decision-model@cf92c2f", // pinned revision
+        // source: "https://huggingface.co/my-org/my-decision-model/resolve/main/onnx/",
+        source: "my-org/my-decision-model",
+        adapter: "shared-prefix",
+        // revision: "cf92c2f", // alternative to the @revision suffix
+      },
+    },
+  },
+})
+```
+
+Remote `source` values resolve on first use and are fetched to memory per
+process (`.onnx` URLs download the weights; Hugging Face ids resolve to
+`…/resolve/<revision>/` and fetch from there). Nothing is persisted to
+`cacheDir` — `cacheDir` only applies to `models:` via Transformers.js.
+Pass `fetch` in the definition to proxy or authenticate those downloads.
+`revision` defaults to `main` — pin a commit for reproducible deploys.
+
+Then evaluate it:
+
+```vue
+<script setup lang="ts">
+const triage = await useDecisionModel("triage")
+
+const { answers } = await triage.decide({
+  state: "We were billed twice. Please refund the duplicate.",
+  questions: {
+    department: {
+      type: "choice",
+      instructions: "Which team should handle this?",
+      criteria: {
+        billing: "invoices, payments and refunds",
+        technical: "bugs and integration problems",
+        other: "everything else",
+      },
+    },
+    urgency: {
+      type: "score",
+      instructions: "How urgent does this look?",
+      criteria: ["not urgent", "soon", "blocking"],
+    },
+    wants_refund: {
+      type: "noul",
+      instructions: "Does the user explicitly ask for a refund?",
+    },
+  },
+})
+
+answers.department.choice // "billing"
+answers.department.confidence // 0.78
+answers.wants_refund.noul // 0.96
+</script>
+```
+
+Questions are validated before inference: `choice` needs 2–255 options,
+`score` needs 2–10 levels, and every question needs `instructions`. This is
+what bounds the answer space, so a `choice` can only ever return one of the
+options you supplied.
+
+#### Runtimes
+
+Pick by graph layout:
+
+| Your model looks like… | `adapter:` | What runs |
+|---|---|---|
+| Single-graph encoder + head — `input_ids` in, per-question logit tensors out | *omit* (default) | One forward pass; outputs matched by id → `outputMap` → single-pair fallback |
+| Manifest directory — `manifest.json` + tokenizer + `model.onnx`, prefix/candidate feeds | `"shared-prefix"` | One prefix run per question, candidates batched |
+| Anything else — reranker API, remote gateway, custom graph | `"~/my-adapter"` | Your `DecisionModelAdapter` factory; cache, dispose and validation reused |
+
+The default runtime is **ONNX**, executed in-process by ONNX Runtime — no
+external service, no Python export step. `onnxruntime-node` is a dependency of
+this module, so the server needs no extra install; add `onnxruntime-web` for
+the browser:
+
+```bash
+pnpm add onnxruntime-web
+```
+
+This adapter runs on **CPU by default** — the safe choice for CPU-only hosts.
+Set `sessionOptions.executionProviders` (e.g. `["webgpu"]`) to override it.
+It is deliberately tolerant about graph conventions:
+
+- **Output names.** An output is matched to a question by its exact question
+  id, then by `outputMap`, and finally by the single-output/single-question
+  fallback. A graph naming its output `logits` therefore works via
+  `outputMap: { logits: "department" }`. If no output matches any requested
+  question, the call throws naming both sides rather than answering nothing.
+- **Shapes.** `[batch, classes]` and `[1, classes]` tensors are read from their
+  last axis, so a batched head needs no reshaping.
+- **Fixed-width heads.** A 5-logit head answering a 3-option question is sliced
+  to 3; a 2-logit head is padded with a neutral zero logit so every declared
+  option still gets a probability and they still sum to 1.
+
+Add `tokenizer: "<hf-id>"` when your checkpoint ships its own vocabulary —
+the bundled tokenizer defaults to `Xenova/all-MiniLM-L6-v2` otherwise. Without
+`maxTokens` the tokenizer's own context length applies and nothing is
+truncated; set `maxTokens` to bound encoding, and the result then reports
+`usage: { stateTokens, truncated }`.
+
+> **Verification status.** The adapter's request validation, output mapping,
+> shape handling and logit projection are covered by tests, and CPU
+> execution through `onnxruntime-node` is confirmed. It has **not** been run
+> end-to-end against a published decision checkpoint, so no specific model is
+> claimed to work unmodified. A graph convention beyond the above needs a
+> custom adapter.
+
+#### Shared-prefix models
+
+`adapter: "shared-prefix"` runs a manifest-directory export — `manifest.json` +
+tokenizer + `model.onnx` — with the batching this layout uses: one prompt prefix
+per question, all candidates scored in one batched forward pass. The same three
+`source` forms work (local dir, URL, Hugging Face id):
+
+```ts
+decisionModels: {
+  sharedPrefix: {
+    source: "my-org/my-decision-model",
+    adapter: "shared-prefix",
+  },
+}
+```
+
+Needs the optional peer `@huggingface/tokenizers` (the export's own
+`tokenizer.json` is used, not MiniLM). `score` levels must be distinct finite
+numbers — the score is the probability-weighted expectation over them. `noul`
+accepts optional `criteria: { true/false }` (or `{ yes/no }`) meanings used as
+the candidate documents; without them generic Yes/No phrasing is scored.
+
+#### Custom Runtimes
+
+For any other engine — a custom graph layout, a remote gateway, or a different
+library — implement `DecisionModelAdapter` and point `adapter` at it. The
+factory receives the resolved definition and returns a judge:
+
+```ts
+// decision-adapter.ts
+import type { DecisionModelAdapter } from "nuxt-local-model"
+
+export default function createAdapter(): DecisionModelAdapter {
+  return {
+    async decide(request) {
+      return { answers: { /* your typed answers */ } }
+    },
+  }
+}
+```
+
+#### Confidence
+
+`confidence` is a distribution-concentration score, `1 - H(p) / ln(N)`: `0`
+when probabilities are uniform, approaching `1` when one candidate dominates.
+It is **not** a calibrated correctness estimate. Use `choice` or the winning
+probability when you need a meaningful threshold, and treat low confidence as a
+signal to abstain or escalate.
+
+#### Server Routes
+
+Nitro routes do not receive Nuxt's app auto-imports, so use `getDecisionModel()`
+there. The module installs a Nitro plugin that publishes the server-side
+config, so no extra setup is needed:
+
+```ts
+// server/api/triage.post.ts
+import { getDecisionModel } from "nuxt-local-model/server"
+
+export default defineEventHandler(async (event) => {
+  const { state } = await readBody(event)
+  const triage = await getDecisionModel("triage")
+  return triage.decide({ state, questions: { /* ... */ } })
+})
+```
+
+### Config Visibility
+
+`runtimeConfig.public` is serialized to every client, so the module redacts
+server-only fields from it:
+
+- `decisionModels.*.adapter` — resolved to an absolute build-machine path
+- `decisionModels.*.sessionOptions` — may hold private-host credentials
+
+The full definitions live on the private `runtimeConfig.localModel`, which only
+the server bundle receives. Adapter specifiers are resolved to absolute paths
+at build time, so you can keep writing `~/my-adapter` in `nuxt.config.ts`.
+
+Because `adapter` is redacted, a browser `useDecisionModel()` reading public
+config sees no specifier and silently falls back to the bundled ONNX adapter —
+pass a custom adapter through the `adapter` **option** of `useDecisionModel()`
+to use your own in the browser.
 
 ### Worker Mode
 

@@ -4,6 +4,8 @@
     ".nuxt/**/*.d.ts",
     "app.vue",
     "nuxt.config.ts",
+    "decision-adapter.ts",
+    "server/api/**/*.ts",
     "../src/runtime/nuxt.d.ts",
     "../dist/module.d.mts",
     "../dist/runtime/nuxt.d.ts"

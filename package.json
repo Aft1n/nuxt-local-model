@@ -1,6 +1,6 @@
 {
   "name": "nuxt-local-model",
-  "version": "0.1.10",
+  "version": "0.2.0",
   "description": "A Nuxt module for local in-app Hugging Face transformer models.",
   "license": "MIT",
   "repository": "https://github.com/Aft1n/nuxt-local-model",
@@ -42,7 +42,10 @@
     "prepack": "nuxt-module-build build",
     "dev:build": "nuxt build playground",
     "dev:prepare": "nuxt-module-build build --stub && nuxt-module-build prepare && nuxt prepare playground",
-    "release": "npm run lint && npm run test && npm run test:types && npm run prepack && changelogen --release && npm publish && git push --follow-tags",
+    "release": "npm run release:preflight && npm run lint && npm run test && npm run test:types && npm run prepack && changelogen --release && npm publish && git push --follow-tags",
+    "prepublishOnly": "npm run release:preflight",
+    "release:preflight": "npm whoami --registry https://registry.npmjs.org/ > /dev/null",
+    "release:verify": "npm publish --dry-run",
     "lint": "oxlint .",
     "test:types": "vue-tsc --noEmit && nuxt prepare playground && cd playground && vue-tsc --noEmit"
   },

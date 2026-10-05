@@ -22,3 +22,25 @@ export type {
   LocalModelTask,
   LocalModelTaskForName,
 } from "./runtime/types"
+
+export type {
+  DecisionAnswer,
+  DecisionAnswers,
+  DecisionChoiceAnswer,
+  DecisionChoiceQuestion,
+  DecisionDecideOptions,
+  DecisionModelAdapter,
+  DecisionModelDefinition,
+  DecisionModelLoadOptions,
+  DecisionModelState,
+  DecisionNoulAnswer,
+  DecisionNoulQuestion,
+  DecisionQuestion,
+  DecisionQuestionMap,
+  DecisionRequest,
+  DecisionResult,
+  DecisionScoreAnswer,
+  DecisionScoreQuestion,
+} from "./runtime/types"
+
+export type { DecisionModel, UseDecisionModelOptions } from "./runtime/composables/useDecisionModel"

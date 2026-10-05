@@ -16,5 +16,11 @@ export default defineNuxtConfig({
         },
       },
     },
+    decisionModels: {
+      triage: {
+        source: "./models/triage",
+        adapter: "~/decision-adapter",
+      },
+    },
   },
 })
