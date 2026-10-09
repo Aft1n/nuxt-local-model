@@ -3,6 +3,7 @@
   "include": [
     ".nuxt/**/*.d.ts",
     "app.vue",
+    "pages/**/*.vue",
     "nuxt.config.ts",
     "decision-adapter.ts",
     "server/api/**/*.ts",
