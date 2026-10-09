@@ -17,6 +17,7 @@ import type {
   DecisionDecideOptions,
   DecisionModelAdapter,
   DecisionModelLoadOptions,
+  DecisionNoulQuestion,
   DecisionQuestion,
   DecisionRequest,
   DecisionResult,
@@ -205,7 +206,7 @@ async function createDirectoryEncoder(
   let Tokenizer: (new (json: object, config?: object) => TokenizerLike) | undefined
   try {
     // Optional peer dependency: only the host app decides to ship it.
-    // @ts-expect-error — untyped optional peer, resolved at runtime only.
+    // @ts-ignore — resolves at runtime; may be absent from the consumer's install.
     ({ Tokenizer } = await import(/* @vite-ignore */ "@huggingface/tokenizers") as {
       Tokenizer?: new (json: object, config?: object) => TokenizerLike
     })
@@ -242,17 +243,16 @@ interface Prefix {
 
 /**
  * Render the shared prefix candidates are scored against:
- * `[cls] <task list> [Instruction: …] [State: …] [sep]`.
+ * `[cls] [Instruction: …] \n [State: …] [sep]`.
  *
- * The body budget goes to the instruction first (a ceiling share, so a huge
- * state can never crowd out the question) and to the state second (the floor
- * share); anything that does not fit is dropped from the tail of the state,
- * where the least load-bearing tokens live.
+ * Layout, marker text and budget split mirror the reference browser/Python
+ * renderer: markers and the newline separator are fixed overhead, the
+ * instruction takes a ceiling share of what remains, the state the floor
+ * share, and either side absorbs what the other leaves unused.
  */
 async function renderPrefix(options: {
   manifest: SharedPrefixManifestWithTokenIds
   encode: (text: string) => Promise<number[]>
-  tasks: string[]
   instruction: string
   state: string
   budget: number
@@ -260,26 +260,39 @@ async function renderPrefix(options: {
   const { manifest, encode, budget } = options
   const cls = manifest.cls_token_id ?? manifest.cls_id ?? 0
   const sep = manifest.sep_token_id ?? manifest.sep_id ?? 0
-  const [taskLine, instructionIds, stateIds, instructionMarker, stateMarker] = await Promise.all([
-    encode(`Tasks: ${options.tasks.join(", ")}`),
+  const [instructionMarker, stateMarker, newline, instructionIds, stateIds] = await Promise.all([
+    encode("Instruction: "),
+    encode("State: "),
+    encode("\n"),
     encode(options.instruction),
     encode(options.state),
-    encode("Instruction:"),
-    encode("State:"),
   ])
 
-  const withInstruction = [...instructionMarker, ...instructionIds]
-  const withState = [...stateMarker, ...stateIds]
-  // `budget` covers the `[cls]`/`[sep]` pair plus the task line; what is left
-  // is split between instruction and state.
-  const bodyBudget = Math.max(0, budget - 2 - taskLine.length)
-  const instructionShare = Math.ceil(bodyBudget / 2)
-  const stateShare = bodyBudget - instructionShare
-  const instructionKept = withInstruction.slice(0, instructionShare)
-  const stateKept = withState.slice(0, Math.max(0, Math.min(stateShare, bodyBudget - instructionKept.length)))
-  const dropped = withInstruction.length + withState.length - instructionKept.length - stateKept.length
+  const bodyBudget = Math.max(
+    0,
+    budget - 2 - instructionMarker.length - stateMarker.length - newline.length,
+  )
+  let keptInstruction = Math.min(instructionIds.length, Math.ceil(bodyBudget / 2))
+  let keptState = Math.min(stateIds.length, Math.floor(bodyBudget / 2))
+  keptInstruction += Math.min(
+    instructionIds.length - keptInstruction,
+    bodyBudget - keptInstruction - keptState,
+  )
+  keptState += Math.min(stateIds.length - keptState, bodyBudget - keptInstruction - keptState)
+  const dropped = instructionIds.length + stateIds.length - keptInstruction - keptState
 
-  return { ids: [cls, ...taskLine, ...instructionKept, ...stateKept, sep], dropped }
+  return {
+    ids: [
+      cls,
+      ...instructionMarker,
+      ...instructionIds.slice(0, keptInstruction),
+      ...newline,
+      ...stateMarker,
+      ...stateIds.slice(0, keptState),
+      sep,
+    ],
+    dropped,
+  }
 }
 
 /** `Candidate: <id>: <description>` — the document form scored. */
@@ -302,29 +315,27 @@ function softmax(values: number[]) {
   return exps.map(value => (total === 0 ? 1 / finite.length : value / total))
 }
 
+/** Reference-renderer default phrasings when a noul question authors no criteria. */
+const DEFAULT_NOUL_YES = "Yes, the condition in the question holds."
+const DEFAULT_NOUL_NO = "No, the condition in the question does not hold."
+
 /**
- * Column pair a `noul` task scores its two candidates on. Those columns are
- * named `true`/`false` (or `yes`/`no`) rather than repeating the task name, so
- * they are looked up by name rather than by offset from the task column.
+ * The affirmative/negative meanings of a `noul` question. The reference
+ * renderer embeds these in the state and scores them as the two candidates.
  */
-function noulColumns(manifest: SharedPrefixManifest, questionId: string): [number, number] {
-  const { tasks } = manifest
-  const yes = tasks.indexOf("true") >= 0 ? tasks.indexOf("true") : tasks.indexOf("yes")
-  const no = tasks.indexOf("false") >= 0 ? tasks.indexOf("false") : tasks.indexOf("no")
-  if (yes < 0 || no < 0) {
-    throw new Error(
-      `Shared-prefix decision model: task "${questionId}" is a noul question but the manifest has no `
-      + "`true`/`false` (or `yes`/`no`) task columns. Manifest tasks: " + tasks.join(", "),
-    )
+function noulMeanings(question: DecisionNoulQuestion): { yes: string, no: string } {
+  const criteria = question.criteria ?? {}
+  return {
+    yes: criteria.true ?? criteria.yes ?? DEFAULT_NOUL_YES,
+    no: criteria.false ?? criteria.no ?? DEFAULT_NOUL_NO,
   }
-  return [yes, no]
 }
 
 /** Probability, confidence, legend and expected value for one question. */
 function buildAnswer(
   questionId: string,
   question: DecisionQuestion,
-  candidates: { id: string, document: string, column: number }[],
+  candidates: { id: string, document: string }[],
   logits: number[],
 ): DecisionAnswer {
   if (logits.length !== candidates.length) {
@@ -438,7 +449,7 @@ export async function createDecisionSharedPrefixAdapter(
       assertDecisionState(request.state)
       assertDecisionQuestions(request.questions)
 
-      const state = typeof request.state === "string" ? request.state : JSON.stringify(request.state)
+      const rawState = request.state
       const answers: DecisionAnswers = {}
       let dropped = 0
       // Reported as the longest rendered prefix, the closest thing to a token
@@ -455,10 +466,17 @@ export async function createDecisionSharedPrefixAdapter(
           )
         }
 
+        // The reference renderer encodes state per question: a noul question
+        // embeds its yes/no meanings next to the original state, and state
+        // always travels as a JSON document.
+        const state =
+          question.type === "noul"
+            ? JSON.stringify({ noul: noulMeanings(question), state: rawState })
+            : JSON.stringify(rawState)
+
         const prefix = await renderPrefix({
           manifest,
           encode,
-          tasks: manifest.tasks,
           instruction: question.instructions,
           state,
           budget: queryLength,
@@ -466,19 +484,24 @@ export async function createDecisionSharedPrefixAdapter(
         dropped += prefix.dropped
         stateTokens = Math.max(stateTokens, prefix.ids.length)
 
-        const candidates = buildCandidates(questionId, question, manifest, taskColumn)
+        const candidates = buildCandidates(question)
+        // Candidate documents end with the sep token and fit the manifest's
+        // document budget including it.
         const documents = await Promise.all(
-          candidates.map(async candidate => (await encode(candidate.document)).slice(0, documentLength)),
+          candidates.map(async candidate => [
+            ...(await encode(candidate.document)).slice(0, documentLength - 1),
+            manifest.sep_token_id ?? 0,
+          ]),
         )
         const logits = await scoreDocuments(ort, session, prefix.ids, documents, pad)
 
-        // Each candidate carries the logit column it is scored on: the task
-        // column for choice/score, its own `true`/`false` column for noul.
+        // Every candidate of a question is read from that question's task
+        // column — the reference renderer reads one column per task.
         answers[questionId] = buildAnswer(
           questionId,
           question,
           candidates,
-          logits.map((row, index) => row[candidates[index]!.column] ?? 0),
+          logits.map(row => row[taskColumn] ?? 0),
         )
       }
 
@@ -527,36 +550,28 @@ async function loadManifest(location: ModelLocation, options: DecisionSharedPref
 }
 
 /**
- * One candidate document per answer space member, each pinned to the logit
- * column it is scored on.
+ * One candidate document per answer space member, all scored on the
+ * question's task column — the layout the reference renderer uses.
  */
-function buildCandidates(
-  questionId: string,
-  question: DecisionQuestion,
-  manifest: SharedPrefixManifest,
-  taskColumn: number,
-) {
+function buildCandidates(question: DecisionQuestion) {
   if (question.type === "choice") {
     return Object.entries(question.criteria).map(([id, description]) => ({
       id,
       document: candidateDocument(id, description),
-      column: taskColumn,
     }))
   }
   if (question.type === "score") {
     return question.criteria.map((level, index) => ({
       id: String(index),
       document: candidateDocument(String(index), level),
-      column: taskColumn,
     }))
   }
-  const [yes, no] = noulColumns(manifest, questionId)
-  const meanings = question.type === "noul" ? question.criteria ?? {} : {}
-  const yesText = meanings.true ?? meanings.yes ?? "yes"
-  const noText = meanings.false ?? meanings.no ?? "no"
+  // Canonical true/false ids: the reference renderer normalizes yes/no
+  // criteria to them, and the id appears in the scored document text.
+  const meanings = noulMeanings(question)
   return [
-    { id: "yes", document: candidateDocument("yes", yesText), column: yes },
-    { id: "no", document: candidateDocument("no", noText), column: no },
+    { id: "true", document: candidateDocument("true", meanings.yes) },
+    { id: "false", document: candidateDocument("false", meanings.no) },
   ]
 }
 

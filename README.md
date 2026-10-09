@@ -494,6 +494,7 @@ decisionModels: {
   sharedPrefix: {
     source: "my-org/my-decision-model",
     adapter: "shared-prefix",
+    // subdir: "onnx_browser", // export dir for bare HF ids; defaults to "onnx/"
   },
 }
 ```
@@ -501,8 +502,14 @@ decisionModels: {
 Needs the optional peer `@huggingface/tokenizers` (the export's own
 `tokenizer.json` is used, not MiniLM). `score` levels must be distinct finite
 numbers — the score is the probability-weighted expectation over them. `noul`
-accepts optional `criteria: { true/false }` (or `{ yes/no }`) meanings used as
-the candidate documents; without them generic Yes/No phrasing is scored.
+accepts optional `criteria: { true/false }` (or `{ yes/no }`) meanings, scored
+as the two candidates and embedded in the state as the reference renderer does;
+without them generic Yes/No phrasing is scored.
+
+Verified end-to-end against
+[`hotchpotch/bekko-system-one-v0-17m`](https://huggingface.co/hotchpotch/bekko-system-one-v0-17m)
+(`subdir: "onnx_browser"`): `choice` and `noul` probabilities match the
+model's reference runtime bit-for-bit on the exercised inputs.
 
 #### Custom Runtimes
 
