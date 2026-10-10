@@ -98,6 +98,7 @@ const module: NuxtModule<NuxtLlmModuleOptions, NuxtLlmModuleOptions, false> = de
   meta: {
     name: "nuxt-local-model",
     configKey: "localModel",
+    compatibility: { nuxt: ">=4.0.0" },
   },
   defaults: {
     runtime: "auto",
