@@ -1,6 +1,23 @@
 # Changelog
 
 
+## v0.2.2
+
+[compare changes](https://github.com/Aft1n/nuxt-local-model/compare/v0.2.1...v0.2.2)
+
+### 🚀 Enhancements
+
+- **playground:** Classify messages with the bekko decision model ([976c5a7](https://github.com/Aft1n/nuxt-local-model/commit/976c5a7))
+
+### 🩹 Fixes
+
+- Match the shared-prefix renderer contract for published models ([7af3655](https://github.com/Aft1n/nuxt-local-model/commit/7af3655))
+- Widen nuxt peer range to >=4.0.0 ([749f0ce](https://github.com/Aft1n/nuxt-local-model/commit/749f0ce))
+
+### ❤️ Contributors
+
+- Aft1n <aftinhb@gmail.com>
+
 ## v0.2.1
 
 [compare changes](https://github.com/Aft1n/nuxt-local-model/compare/v0.1.10...v0.2.1)
